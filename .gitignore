@@ -10,4 +10,5 @@ targetsLorUCDpi33_edited.txt
 targetsLorUCDpi33_edited_irtf
 targetsLorUCDpi33_edited_irtf_nostds
 targetsLorUCDpi33_larger.fits
-
+cats/*cat
+fcharts/*png
