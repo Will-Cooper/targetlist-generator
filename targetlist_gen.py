@@ -529,6 +529,8 @@ class TableEditor:
         """
         j, length = 0, len(self.df)
         chunk = length // 10
+        if not chunk:
+            chunk = len(self.df)
         while j < length:
             top = j + chunk
             if top > length:
