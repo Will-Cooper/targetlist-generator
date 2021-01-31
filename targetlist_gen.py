@@ -528,14 +528,14 @@ class TableEditor:
         Writes in the .cat format (for ING object visibility)
         """
         j, length = 0, len(self.df)
-        chunk = length // 10
-        if not chunk:
+        chunk = 10
+        if chunk > len(self.df):
             chunk = len(self.df)
         while j < length:
             top = j + chunk
             if top > length:
                 top = length
-            df = self.df.loc[j: top, 'shortname': 'epoch']
+            df = self.df.loc[j: top, 'shortname': 'epoch'].copy()
             if len(df) == 0:
                 break
             ra, dec = [], []
