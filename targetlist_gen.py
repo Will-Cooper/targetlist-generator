@@ -196,7 +196,7 @@ def spt_from_num(sptnum: Union[float, int]) -> str:
         return spt
 
 
-def tab_parser(tab: str):
+def tab_parser(tab: str) -> pd.DataFrame:
     """
     Handles different file types differently, tries csv, then fits, then fallback is txt
 
@@ -317,6 +317,7 @@ class TableEditor:
                    f' and Dec: {self.decmin:.1f} - {self.decmax:.1f} degrees')
         df['pmra'] = [0.0, ] * len(df)  # set pmra to 0
         df['pmdec'] = [0.0, ] * len(df)  # set pmdec to 0
+        df['tmassk'] = df['tmassk'].fillna(0)  # account for missing mag values
         self.df = self.df_cut(df)  # cut on ra & dec limits
         self.df.reset_index(drop=True, inplace=True)
         live_print(f'There are {len(self.df)} targets')
@@ -563,7 +564,7 @@ class FinderCharts:
         Constructs and sends query to Aladin
     """
 
-    def __init__(self, tab: str, name: str, fov: Union[float, int],
+    def __init__(self, tab: pd.DataFrame, name: str, fov: Union[float, int],
                  band: str, aladin: str, view: bool):
         """
         Constructor method of class, all functions handled from here
@@ -571,7 +572,7 @@ class FinderCharts:
         Parameters
         ----------
         tab
-            Name of target list file to look in
+            Dataframe of sources
         name
             Name of target to look for
         fov
@@ -583,16 +584,10 @@ class FinderCharts:
         view
             Optional argument for viewing data
         """
-        if 'csv' in tab:
-            df = df_editor(pd.read_table(tab, sep=','))  # load and edit table
-        else:
-            df = df_editor(pd.read_table(tab, sep='\t', names=['index', 'name',
-                                                               'ra', 'dec', 'epoch', 'pmra', 'pmdec', 'spt', 'tmassk'],
-                                         usecols=list(range(0, 9))))  # load and edit table if using .txt file
+        self.df = tab
         self.name = name
-        if self.name not in df['shortname'].values:  # check target is in target list table
-            raise ValueError(f'{self.name} not in {tab}')
-        self.df = df
+        if self.name not in self.df['shortname'].values:  # check target is in target list table
+            raise ValueError(f'{self.name} not in table given')
         self.ra, self.dec = self.find_coords()  # get the coordinates in degrees
         self.fov = fov
         self.band = band
@@ -670,7 +665,7 @@ def main():
     tgtlist.add_argument('-s', '--standard_list', help='Name of standard list',
                          default='large_standards_bright.csv')
     fchart = myargs.add_argument_group('Finder Chart')
-    fchart.add_argument('-n', '--name', help='Name of target')
+    fchart.add_argument('-n', '--name', help='Name of target, type "all" for all')
     fchart.add_argument('-b', '--aladin-band', default='CDS/P/2MASS/K', help='Band to get finder chart for')
     fchart.add_argument('-f', '--fov', type=int, default=1, help='Field of View in arcminutes for finder chart')
     fchart.add_argument('-a', '--aladin-path', help='Full path to aladin jar file', default='~/.Aladin/Aladin.jar')
@@ -725,7 +720,16 @@ def main():
     # running selected tasks
     if tgt is not None:  # if finder chart requested
         tgt = str(tgt)
-        FinderCharts(tab, name=tgt, fov=fov, band=band, aladin=aladin_path, view=do_view)  # finder chart for object
+        fc_df = tab_parser(tab)
+        if tgt.lower() == 'all':
+            live_print('Running all targets finder charts')
+            for _tgt in fc_df['shortname'].values:
+                if _tgt[0] == 'J':  # if a target not standard
+                    FinderCharts(fc_df, name=_tgt, fov=fov, band=band, aladin=aladin_path, view=do_view)
+                    live_print(f'Done with {_tgt}')
+        else:  # single target finder chart
+            FinderCharts(fc_df, name=tgt, fov=fov, band=band, aladin=aladin_path, view=do_view)
+            live_print(f'Done with {tgt}')
     if do_list:  # if creation of list requested
         # some warnings if using default ra & dec ranges
         class DefaultVarsWarning(UserWarning):
