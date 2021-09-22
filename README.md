@@ -1,3 +1,18 @@
+# Targetlist Generator
+
+## Installation
+Ensure dependencies are correct, see `requirements.txt`; best course of action is to use conda:
+```bash
+conda create --name targetlist --file requirements.txt
+conda activate targetlist
+```
+Then clone or fork this repo:
+```bash
+git clone https://github.com/Will-Cooper/targetlist-generator.git
+cd targetlist-generator/
+```
+
+## Running
 A script to automatically cut target lists into RA and DEC limits, where RA can be calculated just off sunset/ sunrise times (in UTC!) if desired.  
 Run in terminal with 
 ```bash
