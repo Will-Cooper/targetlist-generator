@@ -106,3 +106,6 @@ Find RA Limits:
   --latitude LAT_DEG LAT_MIN
                         Observatory latitude in form DD MM, e.g. 19 49
   ```
+
+### Citing
+[![DOI](https://zenodo.org/badge/323075587.svg)](https://zenodo.org/badge/latestdoi/323075587)
