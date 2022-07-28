@@ -196,7 +196,7 @@ def spt_from_num(sptnum: Union[float, int]) -> str:
         return spt
 
 
-def tab_parser(tab: str) -> pd.DataFrame:
+def tab_parser(tab: str, magcol: str) -> pd.DataFrame:
     """
     Handles different file types differently, tries csv, then fits, then fallback is txt
 
@@ -204,6 +204,8 @@ def tab_parser(tab: str) -> pd.DataFrame:
     ----------
     tab
         Name of table to be opened into pandas dataframe
+    magcol
+        The magnitude column to go in the target list
     Returns
     -------
     df
@@ -216,7 +218,7 @@ def tab_parser(tab: str) -> pd.DataFrame:
         df['shortname'] = [i.decode('utf-8').strip() for i in df['shortname']]
     else:
         df = df_editor(pd.read_table(tab, sep='\t', names=['index', 'name',
-                                                           'ra', 'dec', 'epoch', 'pmra', 'pmdec', 'spt', 'tmassk'],
+                                                           'ra', 'dec', 'epoch', 'pmra', 'pmdec', 'spt', magcol],
                                      usecols=list(range(0, 9))))  # load and edit table if using .txt file
     return df
 
@@ -297,7 +299,7 @@ class TableEditor:
         Write file in IRTF format
     """
 
-    def __init__(self, tab: str, std_tab: str, *limits):
+    def __init__(self, tab: str, magcol: str, std_tab: str, *limits):
         """
         Constructor method for class, all functions handled from here
 
@@ -310,14 +312,16 @@ class TableEditor:
         limits
             RA & Dec lower & upper limits
         """
-        df = tab_parser(tab)
+        df = tab_parser(tab, magcol)
         live_print(f'{tab} loaded')
         self.ramin, self.ramax, self.decmin, self.decmax = self.limits_transform(limits)  # ensure limits are in degs
+        self.magcol = magcol
         live_print(f'Limits understood -- RA: {self.ramin:.2f} - {self.ramax:.2f} degrees'
                    f' and Dec: {self.decmin:.1f} - {self.decmax:.1f} degrees')
-        df['pmra'] = [0.0, ] * len(df)  # set pmra to 0
-        df['pmdec'] = [0.0, ] * len(df)  # set pmdec to 0
-        df['tmassk'] = df['tmassk'].fillna(0)  # account for missing mag values
+        if not any([col in df.columns for col in ('pmra', 'pmdec')]):
+            df['pmra'] = [0.0, ] * len(df)  # set pmra to 0
+            df['pmdec'] = [0.0, ] * len(df)  # set pmdec to 0
+        df[self.magcol] = df[self.magcol].fillna(0)  # account for missing mag values
         self.df = self.df_cut(df)  # cut on ra & dec limits
         self.df.reset_index(drop=True, inplace=True)
         live_print(f'There are {len(self.df)} targets')
@@ -349,6 +353,7 @@ class TableEditor:
         limout
             Tuple of limits: ra lower, ra upper, dec lower, dec upper; all in degrees
         """
+        print(limits)
         limout = np.empty(4)  # empty array
         for i, var in enumerate(limits[0]):  # over every limit
             if type(var) == str:  # check if it is in sexadecimal form
@@ -371,21 +376,20 @@ class TableEditor:
         """
         if self.ramax > self.ramin:
             df = df.loc[np.logical_and(df['ra'] > self.ramin, df['ra'] < self.ramax),  # cut on ra
-                        ['shortname', 'ra', 'dec', 'pmra', 'pmdec', 'spt', 'tmassk']]  # only keep these columns
+                        ['shortname', 'ra', 'dec', 'pmra', 'pmdec', 'spt', self.magcol]]  # only keep these columns
         else:
             df = df.loc[np.logical_or(df['ra'] > self.ramin, df['ra'] < self.ramax),  # cut on ra
-                        ['shortname', 'ra', 'dec', 'pmra', 'pmdec', 'spt', 'tmassk']]  # only keep these columns
+                        ['shortname', 'ra', 'dec', 'pmra', 'pmdec', 'spt', self.magcol]]  # only keep these columns
         df = df.loc[np.logical_and(df['dec'] > self.decmin, df['dec'] < self.decmax)]  # cut on dec
         df['epoch'] = [2000, ] * len(df)
         if df['spt'].dtype in ('float64', 'int64'):
             df['spt'] = [spt_from_num(i) for i in df['spt'].values]  # convert spectral type numbers to spectral type
         if len(df) < 1:  # check we haven't cut to an empty target list
             raise ArithmeticError('Check limits, cutting has created an empty table')
-        df = df[['shortname', 'ra', 'dec', 'epoch', 'pmra', 'pmdec', 'spt', 'tmassk']]  # set column order
+        df = df[['shortname', 'ra', 'dec', 'epoch', 'pmra', 'pmdec', 'spt', self.magcol]]  # set column order
         return df
 
-    @staticmethod
-    def standards_load(f: str) -> pd.DataFrame:
+    def standards_load(self, f: str) -> pd.DataFrame:
         """
         Load the standards file and convert into a useful form
 
@@ -400,8 +404,8 @@ class TableEditor:
             Dataframe of standards
         """
         dfstd = pd.read_table(f, sep=',')
-        dfstd = dfstd.rename(columns={'K': 'tmassk'})  # rename columns to be same as target dataframe
-        dfstd = dfstd[['shortname', 'ra', 'dec', 'spt', 'tmassk']]  # only take these columns from dataframe
+        dfstd = dfstd.rename(columns={'K': self.magcol})  # rename columns to be same as target dataframe
+        dfstd = dfstd[['shortname', 'ra', 'dec', 'spt', self.magcol]]  # only take these columns from dataframe
         dfstd['pmra'] = [0.0, ] * len(dfstd)
         dfstd['pmdec'] = [0.0, ] * len(dfstd)
         dfstd['shortname'] = [i.strip().replace(' ', '_') for i in dfstd['shortname'].values]
@@ -417,7 +421,7 @@ class TableEditor:
         dfc
             Dataframe of the closest standards
         """
-        dfc = pd.DataFrame(columns=['shortname', 'ra', 'dec', 'epoch', 'pmra', 'pmdec', 'spt', 'tmassk'])  # dataframe
+        dfc = pd.DataFrame(columns=['shortname', 'ra', 'dec', 'epoch', 'pmra', 'pmdec', 'spt', self.magcol])  # df
         live_print('Finding closest standards', end='')
         rastds = self.dfstd['ra'].values * u.deg
         decstds = self.dfstd['dec'].values * u.deg
@@ -487,7 +491,7 @@ class TableEditor:
             row[5] = round(row[5], 2)  # round the pmdec
             return row
 
-        dfcomb = pd.DataFrame(columns=['shortname', 'ra', 'dec', 'epoch', 'pmra', 'pmdec', 'spt', 'tmassk'])
+        dfcomb = pd.DataFrame(columns=['shortname', 'ra', 'dec', 'epoch', 'pmra', 'pmdec', 'spt', self.magcol])
         live_print('Combining tables', '')
         for i in range(len(self.df)):  # over every row of dataframe
             rowobj = row_editor(np.array(self.df.iloc[[i]])[0])  # gather row of object and edit
@@ -650,7 +654,7 @@ def main():
         try:
             return float(var)
         except ValueError:
-            return var
+            return var.strip()
 
     # argument parsing
     myargs = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -664,6 +668,7 @@ def main():
                          help='Dec range in form "00.0" or "s00d00m00s"', default=(-90, 90))
     tgtlist.add_argument('-s', '--standard_list', help='Name of standard list',
                          default='large_standards_bright.csv')
+    tgtlist.add_argument('-m', '--mag-band', help='Relevant magnitude band for target list', default='tmassk')
     fchart = myargs.add_argument_group('Finder Chart')
     fchart.add_argument('-n', '--name', help='Name of target, type "all" for all')
     fchart.add_argument('-b', '--aladin-band', default='CDS/P/2MASS/K', help='Band to get finder chart for')
@@ -687,6 +692,7 @@ def main():
     rarange = tuple(args.ra_range)
     decrange = tuple(args.dec_range)
     std = args.standard_list
+    magcol = args.mag_band
     band = str(args.aladin_band)
     fov = args.fov
     aladin_path = args.aladin_path
@@ -711,16 +717,16 @@ def main():
     if len(glob.glob(tab)) < 1:  # look for stated table
         raise FileNotFoundError(f'Cannot find {tab}')
     else:  # otherwise proceed
-        df = tab_parser(tab)
+        df = tab_parser(tab, magcol)
         cols = list(df.columns)
-        if np.any([col not in cols for col in ('ra', 'dec', 'shortname', 'tmassk', 'spt')]):  # need specifc columns
-            raise ValueError(f'Need columns "ra", "dec", "tmassk", "spt"'
+        if np.any([col not in cols for col in ('ra', 'dec', 'shortname', magcol, 'spt')]):  # need specifc columns
+            raise ValueError(f'Need columns "ra", "dec", "<magcol>", "spt"'
                              f' and "name" or "shortname" in table {tab} (any case)')
 
     # running selected tasks
     if tgt is not None:  # if finder chart requested
         tgt = str(tgt)
-        fc_df = tab_parser(tab)
+        fc_df = tab_parser(tab, magcol)
         if tgt.lower() == 'all':
             live_print('Running all targets finder charts')
             for _tgt in fc_df['shortname'].values:
@@ -748,7 +754,7 @@ def main():
             else:
                 print('Approximating RA limits based on night time and coordinates')
                 ramin, ramax = find_ra_lims(sunset, sunrise, longitude, latitude)
-        TableEditor(tab, std, ramin, ramax, decmin, decmax)  # create table using cuts from given limits
+        TableEditor(tab, magcol, std, ramin, ramax, decmin, decmax)  # create table using cuts from given limits
     elif not do_list and tgt is None:  # otherwise nothing is going to happen so warn about it
         class InvalidChoiceWarning(UserWarning):
             pass
