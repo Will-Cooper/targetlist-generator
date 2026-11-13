@@ -67,7 +67,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if args.command == 'gui':
-        from .gui import main as gui_main  # PySide6 is optional
+        try:
+            from .gui import main as gui_main
+        except ImportError as err:  # PySide6 is an optional extra
+            sys.exit(f'targetlist: the GUI needs PySide6 ({err}); install "targetlist-generator[gui]"')
         gui_main()
         return
     urls = tuple(args.hips2fits_url) + finder.HIPS2FITS
