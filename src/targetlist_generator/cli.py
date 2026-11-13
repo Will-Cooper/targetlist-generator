@@ -43,7 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
     night.add_argument('--max-airmass', type=float, default=2.0, help='(default: %(default)s)')
     night.add_argument('--min-time', type=float, default=30.0,
                        help='minutes a target must spend below --max-airmass (default: %(default)s)')
-    box = make.add_argument_group('RA/Dec box (optional, combines with the night cut)')
+    night.add_argument('--min-moon-sep', type=float, default=0.0,
+                       help='drop targets closer than this to the Moon at mid-night [deg] (default: off)')
+    night.add_argument('--order', choices=('time', 'input'), default='time',
+                       help='list order: by time of best airmass, or as input (default: %(default)s)')
+    box =make.add_argument_group('RA/Dec box (optional, combines with the night cut)')
     box.add_argument('-r', '--ra-range', nargs=2, metavar=('LOWER', 'UPPER'),
                      help='degrees or hours like 20h; wraps through 0 when LOWER > UPPER')
     box.add_argument('-d', '--dec-range', nargs=2, metavar=('LOWER', 'UPPER'), help='degrees or e.g. 15d30m')
@@ -53,8 +57,9 @@ def build_parser() -> argparse.ArgumentParser:
     std.add_argument('--std-band', default='K', choices=standards.BANDS, help='(default: %(default)s)')
     std.add_argument('--std-spt', help='only standards of this type, e.g. A0V (default: B9V-A1V)')
     std.add_argument('--std-offset', type=float, default=30.0,
-                     help='pair with the standard nearest the target this many minutes later in RA '
-                          '(default: %(default)s)')
+                     help='standard observed this many minutes after the target (default: %(default)s)')
+    std.add_argument('--std-airmass-tol', type=float, default=0.1,
+                     help='with a night: nearest standard within this airmass of the target (default: %(default)s)')
     make.add_argument('--finders', action='store_true', help='also make finder charts for every kept target')
 
     fc = sub.add_parser('finder', parents=[common], help='finder charts for named targets in the list')
@@ -76,10 +81,13 @@ def main(argv: list[str] | None = None) -> None:
     urls = tuple(args.hips2fits_url) + finder.HIPS2FITS
     try:
         if args.command == 'make':
-            make_targetlist(args.target_list, args.out_dir, args.mag_col, not args.no_standards,
-                            args.standards_file, args.std_band, args.std_spt, args.std_offset, args.finders,
-                            args.survey, args.fov, urls, date=args.date, site=args.site, lat=args.lat, lon=args.lon,
-                            twilight=args.twilight, max_airmass=args.max_airmass, min_time=args.min_time,
+            make_targetlist(args.target_list, out_dir=args.out_dir, mag_col=args.mag_col,
+                            with_standards=not args.no_standards, standards_file=args.standards_file,
+                            std_band=args.std_band, std_spt=args.std_spt, std_offset=args.std_offset,
+                            std_airmass_tol=args.std_airmass_tol, order=args.order, finders=args.finders,
+                            survey=args.survey, fov=args.fov, urls=urls, date=args.date, site=args.site,
+                            lat=args.lat, lon=args.lon, twilight=args.twilight, max_airmass=args.max_airmass,
+                            min_time=args.min_time, min_moon_sep=args.min_moon_sep,
                             ra_range=args.ra_range, dec_range=args.dec_range)
         else:
             targets = io.read_targets(args.target_list, args.mag_col)

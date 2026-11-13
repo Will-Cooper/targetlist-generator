@@ -121,3 +121,68 @@ def test_plot_finder_offline(tmp_path):
     hdu = fits.PrimaryHDU(data, header=wcs.to_header())
     path = finder.plot_finder(hdu, 'J1000+2200', 'CDS/P/2MASS/K', 2.0, tmp_path / 'f.png')
     assert path.stat().st_size > 10_000
+
+
+IRTF = {'lat': 19.83, 'lon': -155.47}
+
+
+def test_matched_standards_brute_force(target_csv):
+    loc = sky.site_location(**IRTF)
+    times = sky.night_times('2026-11-14', loc)
+    targets = io.read_targets(target_csv).iloc[:6]
+    stds = standards.load_standards('tmassk', spt='A0V')
+    got, _ = standards.matched_standards(targets, stds, times, loc, offset=30, tol=0.1)
+    t_am = sky.airmass(targets.ra.to_numpy(), targets.dec.to_numpy(), times, loc)
+    s_am = sky.airmass(stds.ra.to_numpy(), stds.dec.to_numpy(), times, loc)
+    for i in range(len(targets)):
+        best = t_am[:, i].argmin()
+        with np.errstate(invalid='ignore'):
+            diff = np.nan_to_num(np.abs(s_am[min(best + 6, len(times) - 1)] - t_am[best, i]), nan=np.inf)
+        sep = SkyCoord(targets.ra[i] * u.deg, targets.dec[i] * u.deg).separation(
+            SkyCoord(stds.ra.to_numpy() * u.deg, stds.dec.to_numpy() * u.deg)).deg
+        want = np.argmin(np.where(diff <= 0.1, sep, np.inf)) if (diff <= 0.1).any() else np.argmin(diff)
+        assert got.shortname[i] == stds.shortname.iloc[want]
+
+
+def test_schedule_order_and_files(target_csv, tmp_path):
+    kept, paths = make_targetlist(target_csv, tmp_path, log=lambda s: None, date='2026-11-14', **IRTF)
+    assert list(kept['best_utc']) == sorted(kept['best_utc'])
+    sched = pd.read_csv(tmp_path / 'targets_schedule.csv')
+    assert list(sched.columns) == ['shortname', 'best_utc', 'min_airmass', 'start_utc', 'end_utc', 'moon_sep',
+                                   'standard']
+    assert (sched['start_utc'] <= sched['best_utc']).all() and (sched['best_utc'] <= sched['end_utc']).all()
+    assert (sched['min_airmass'] <= 2).all()
+    irtf = (tmp_path / 'targets_irtf.txt').read_text().splitlines()[3::2]
+    assert [line.split('\t')[1] for line in irtf] == list(kept['shortname'])
+    assert (tmp_path / 'targets_airmass.png').stat().st_size > 20_000
+    kept_in, _ = make_targetlist(target_csv, tmp_path, log=lambda s: None, date='2026-11-14', order='input', **IRTF)
+    names = list(io.read_targets(target_csv)['shortname'])
+    assert sorted(kept_in['shortname'], key=names.index) == list(kept_in['shortname'])
+
+
+def test_moon_separation_and_cut(target_csv, tmp_path):
+    from astropy.coordinates import get_body
+
+    from targetlist_generator import schedule
+    loc = sky.site_location(**IRTF)
+    times = sky.night_times('2026-11-14', loc)
+    targets = io.read_targets(target_csv)
+    body, lit = schedule.moon(times, loc)
+    assert 0 <= lit <= 1
+    ref = get_body('moon', times[len(times) // 2], loc)
+    stars = SkyCoord(targets.ra.to_numpy() * u.deg, targets.dec.to_numpy() * u.deg).transform_to(ref.frame)
+    assert np.allclose(schedule.moon_separation(targets, body), ref.separation(stars).deg, atol=1e-6)
+    kept, _ = make_targetlist(target_csv, tmp_path, log=lambda s: None, date='2026-11-14', min_moon_sep=60, **IRTF)
+    assert (kept['moon_sep'] >= 60).all()
+
+
+@pytest.mark.network
+def test_aladin_batch(tmp_path):
+    import shutil
+
+    from targetlist_generator import finder
+    if shutil.which('aladin') is None:
+        pytest.skip('aladin not installed')
+    items = [('A', 150.0, 22.0), ('B', 151.0, 23.0)]
+    paths, failed = finder.make_finders(items, tmp_path, urls=('http://127.0.0.1:9/none',), log=lambda s: None)
+    assert failed == [] and [p.name for p in paths] == ['A_2arcmin.png', 'B_2arcmin.png']

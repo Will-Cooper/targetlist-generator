@@ -21,6 +21,9 @@ def test_gui_run(qtbot, target_csv, tmp_path):
         window.run_button.click()
     assert 0 < window.table.rowCount() < 25
     assert (tmp_path / 'targets_irtf.txt').exists()
+    headers = [window.table.horizontalHeaderItem(j).text() for j in range(window.table.columnCount())]
+    assert {'best_utc', 'min_airmass', 'moon_sep', 'standard'} <= set(headers)
+    assert not window.airmass.pixmap().isNull()
 
 
 def test_gui_needs_target_list(qtbot, monkeypatch):

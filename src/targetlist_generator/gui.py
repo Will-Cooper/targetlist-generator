@@ -80,12 +80,17 @@ class MainWindow(QMainWindow):
         self.twilight = spin(-18, 0, -12, 1)
         self.max_airmass = spin(1, 5, 2, 2, 0.1)
         self.min_time = spin(0, 720, 30, 0, 10)
+        self.min_moon_sep = spin(0, 180, 0, 0, 5)
+        self.order = QComboBox()
+        self.order.addItems(('time', 'input'))
         self.site.currentTextChanged.connect(self.site_changed)
         self.site.setCurrentText('irtf')
         night = QFormLayout(self.night)
         for label, widget in (('Evening of', self.date), ('Site', self.site), ('Latitude [deg]', self.lat),
                               ('Longitude [deg, east +]', self.lon), ('Twilight Sun alt. [deg]', self.twilight),
-                              ('Max airmass', self.max_airmass), ('Min time below it [min]', self.min_time)):
+                              ('Max airmass', self.max_airmass), ('Min time below it [min]', self.min_time),
+                              ('Min Moon separation [deg]', self.min_moon_sep),
+                              ('List order (best time / input)', self.order)):
             night.addRow(label, widget)
 
         self.box = QGroupBox('RA/Dec box', checkable=True, checked=False)
@@ -101,9 +106,11 @@ class MainWindow(QMainWindow):
         self.std_band.setCurrentText('K')
         self.std_spt.addItems(('any', 'A0V', 'A1V', 'B9V'))
         self.std_offset = spin(-120, 120, 30, 0, 5)
+        self.std_airmass_tol = spin(0.01, 1, 0.1, 2, 0.05)
         stds = QFormLayout(self.stds)
         for label, widget in (('Band', self.std_band), ('Spectral type', self.std_spt),
-                              ('Nearest to target RA + [min]', self.std_offset)):
+                              ('Observed after target [min]', self.std_offset),
+                              ('Airmass tolerance (with a night)', self.std_airmass_tol)):
             stds.addRow(label, widget)
 
         self.finders = QGroupBox('Finder charts', checkable=True, checked=False)
@@ -146,6 +153,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.log, 'Log')
         self.tabs.addTab(self.table, 'Targets')
         self.tabs.addTab(chart_view, 'Finder charts')
+        self.airmass = QLabel('Give a night to see the airmass plot', alignment=Qt.AlignCenter)
+        self.tabs.addTab(self.airmass, 'Airmass plot')
 
         main = QSplitter()
         main.addWidget(scroll)
@@ -200,12 +209,14 @@ class MainWindow(QMainWindow):
         kw = {'target_list': self.target_list.text(), 'out_dir': self.out_dir.text(),
               'mag_col': self.mag_col.currentText(), 'with_standards': self.stds.isChecked(),
               'std_band': self.std_band.currentText(), 'std_offset': self.std_offset.value(),
+              'std_airmass_tol': self.std_airmass_tol.value(), 'order': self.order.currentText(),
               'std_spt': None if self.std_spt.currentText() == 'any' else self.std_spt.currentText(),
               'finders': self.finders.isChecked(), 'survey': self.survey.currentText(), 'fov': self.fov.value(),
               'urls': ((self.mirror.text().strip(),) if self.mirror.text().strip() else ()) + finder.HIPS2FITS}
         if self.night.isChecked():
             kw |= {'date': self.date.date().toString('yyyy-MM-dd'), 'twilight': self.twilight.value(),
-                   'max_airmass': self.max_airmass.value(), 'min_time': self.min_time.value()}
+                   'max_airmass': self.max_airmass.value(), 'min_time': self.min_time.value(),
+                   'min_moon_sep': self.min_moon_sep.value()}
             if self.site.currentText() == CUSTOM:
                 kw |= {'lat': self.lat.value(), 'lon': self.lon.value()}
             else:
@@ -240,13 +251,19 @@ class MainWindow(QMainWindow):
     def on_done(self, result):
         kept, paths = result
         rows = io.formatted(kept, self.mag_col.currentText().lower())
+        for col in ('best_utc', 'min_airmass', 'moon_sep', 'standard'):  # present when a night/standards given
+            if col in kept.columns:
+                rows[col] = kept[col].to_numpy()
         self.table.setColumnCount(len(rows.columns))
         self.table.setRowCount(len(rows))
         self.table.setHorizontalHeaderLabels(list(rows.columns))
         for i, row in enumerate(rows.itertuples(index=False)):
             for j, value in enumerate(row):
                 self.table.setItem(i, j, QTableWidgetItem(str(value)))
-        self.chart_paths = {p.stem: p for p in paths if p.suffix == '.png'}
+        plots = [p for p in paths if p.name.endswith('_airmass.png')]
+        if plots:
+            self.airmass.setPixmap(QPixmap(str(plots[0])))
+        self.chart_paths = {p.stem: p for p in paths if p.suffix == '.png' and p not in plots}
         self.charts.clear()
         self.charts.addItems(list(self.chart_paths))
         self.tabs.setCurrentWidget(self.table)
