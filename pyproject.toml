@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "targetlist-generator"
+version = "2.0.0.dev0"
+description = "Cut target lists to a night's visibility, pair telluric standards, write IRTF/ING lists and finder charts"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "W. J. Cooper" }]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+dependencies = [
+    "numpy>=1.26",
+    "astropy>=6.1",
+    "pandas>=2.1",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.6"]
+dev = ["pytest>=8", "ruff>=0.5"]
+gui-test = ["targetlist-generator[gui]", "pytest-qt>=4.4"]
+
+[project.urls]
+Homepage = "https://github.com/Will-Cooper/targetlist-generator"
+Issues = "https://github.com/Will-Cooper/targetlist-generator/issues"
+
+[project.scripts]
+targetlist = "targetlist_generator.cli:main"
+
+[project.gui-scripts]
+targetlist-gui = "targetlist_generator.gui:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/targetlist_generator"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "NPY"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "gui: needs PySide6 and a (possibly offscreen) Qt platform",
+    "network: needs internet access (CDS hips2fits, astropy site registry)",
+]
