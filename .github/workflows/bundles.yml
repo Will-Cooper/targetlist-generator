@@ -17,7 +17,7 @@ jobs:
         include:
           - os: ubuntu-22.04  # older glibc, so the build runs on more Linux distributions
             asset: targetlist-gui-linux-x86_64.tar.gz
-          - os: macos-14  # Apple Silicon
+          - os: macos-15  # Apple Silicon
             asset: targetlist-gui-macos-arm64.zip
           - os: windows-latest
             asset: targetlist-gui-windows-x86_64.zip
