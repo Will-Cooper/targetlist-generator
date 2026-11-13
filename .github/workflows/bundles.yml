@@ -1,0 +1,65 @@
+name: Standalone bundles
+
+# Ready-to-run Target List Generator windows (no Python needed), attached to each GitHub release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04  # older glibc, so the build runs on more Linux distributions
+            asset: targetlist-gui-linux-x86_64.tar.gz
+          - os: macos-14  # Apple Silicon
+            asset: targetlist-gui-macos-arm64.zip
+          - os: windows-latest
+            asset: targetlist-gui-windows-x86_64.zip
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[gui]" pyinstaller
+      - name: Freeze
+        run: >
+          pyinstaller --noconfirm --windowed --name targetlist-gui
+          --collect-data astropy --collect-data astropy_iers_data --collect-data targetlist_generator
+          --copy-metadata targetlist-generator packaging/launch_gui.py
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libdbus-1-3 libfontconfig1
+          QT_QPA_PLATFORM=offscreen timeout 30 dist/targetlist-gui/targetlist-gui || [ $? -eq 124 ]
+      - name: Archive
+        run: |
+          case "${{ runner.os }}" in
+            Linux) tar -C dist -czf "${{ matrix.asset }}" targetlist-gui ;;
+            macOS) ditto -c -k --keepParent dist/targetlist-gui.app "${{ matrix.asset }}" ;;
+            Windows) python -c "import shutil; shutil.make_archive('${{ matrix.asset }}'[:-4], 'zip', 'dist', 'targetlist-gui')" ;;
+          esac
+      - name: Attach to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "${{ matrix.asset }}" --clobber
+      - name: Keep as workflow artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
