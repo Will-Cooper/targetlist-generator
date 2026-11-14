@@ -254,5 +254,11 @@ def test_formats_match_spec_examples(tmp_path):
     cos_dec = np.cos(np.radians(sky.parse_angle('+29:05:25.58', u.deg)))
     row = spec_row('FK5-0001', '0:08:23.265', '+29:05:25.58', pmra=1.039 / 100 * 15 * 1000 * cos_dec,
                    pmdec=-16.33 / 100 * 1000, mag=2.06, spt='A0')
+    # Keck LGS-page example 'NIR standard 21 30 31.700 +12 37 51.30 2000.0': name in columns 1-16
+    formats.keck(tmp_path / 'k', spec_row('NIR_standard', '21:30:31.70', '+12:37:51.3'), None, 'k')
+    assert (tmp_path / 'k_keck.txt').read_text() == 'NIR_standard    21 30 31.70 +12 37 51.3 2000.0\n'
+    # Lick example 'obj1a  12 34 56  1 2 3  2000.0' (free-form whitespace, so padding and precision may differ)
+    formats.lick(tmp_path / 'l', spec_row('obj1a', '12:34:56', '1:02:03'), None, 'k')
+    assert (tmp_path / 'l_lick.txt').read_text() == 'obj1a 12 34 56.00 +01 02 03.0 2000.0\n'
     formats.mmt(tmp_path / 'm', row, None, 'k')
     assert (tmp_path / 'm_mmt.cat').read_text() == 'FK5-0001 00:08:23.265 +29:05:25.58 +1.039 -16.33 2.06 A0 J2000.0\n'
