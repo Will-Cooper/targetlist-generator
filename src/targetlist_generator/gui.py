@@ -1,5 +1,6 @@
 """Graphical interface: load a table (file or SAMP), set times, night and observatory, plan, save."""
 import os
+import queue
 import sys
 import tempfile
 from pathlib import Path
@@ -9,7 +10,7 @@ import pandas as pd
 import PySide6
 from matplotlib.figure import Figure
 from matplotlib.image import imread
-from PySide6.QtCore import QDate, QObject, Qt, QThread, QUrl, Signal
+from PySide6.QtCore import QDate, QObject, Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
@@ -171,13 +172,42 @@ class Worker(QObject):
             self.failed.emit(f'{type(err).__name__}: {err}')
 
 
+class WebConsent(QObject):
+    """Asks before a web page (e.g. the GUCDS site) may join our SAMP hub, as TOPCAT does. The hub sets
+    ``queue_request``/``queue_result`` (pyvo's web-profile dialog protocol); requests are polled on a timer."""
+
+    def __init__(self, window: QWidget):
+        super().__init__(window)
+        self.window = window
+        self.queue_request = self.queue_result = None
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.poll)
+        self.timer.start(200)
+
+    def poll(self):
+        if self.queue_request is None:
+            return
+        try:
+            details, _client, origin = self.queue_request.get_nowait()
+        except queue.Empty:
+            return
+        name = details if isinstance(details, str) else details.get('samp.name', 'A web page')
+        answer = QMessageBox.question(
+            self.window, 'Allow a web page to send tables?',
+            f'{name} ({origin}) wants to connect so it can send tables to the Target List Generator. '
+            'Only allow pages you trust.')
+        self.queue_result.put(answer == QMessageBox.Yes)
+
+
 class Samp(QObject):
-    """Receives tables sent from TOPCAT (or any SAMP application); starts its own hub when none is running."""
+    """Receives tables sent over SAMP: from TOPCAT, Aladin, or a web page such as the GUCDS site. When no hub is
+    running it starts its own, with the web profile (pages connect after you allow them)."""
     table = Signal(str, str)  # local path, table name
     failed = Signal(str)
 
-    def __init__(self):
+    def __init__(self, consent: WebConsent):
         super().__init__()
+        self.consent = consent
         self.client = self.hub = None
         self.folder = tempfile.TemporaryDirectory(prefix='targetlist_samp_')
 
@@ -187,8 +217,8 @@ class Samp(QObject):
                                            description='Plans a night from a target table')
         try:
             self.client.connect()
-        except SAMPHubError:  # no hub yet: be the hub, so TOPCAT started later joins us
-            self.hub = SAMPHubServer(web_profile=False)
+        except SAMPHubError:  # no hub yet: be the hub, so TOPCAT or a web page can join us
+            self.hub = SAMPHubServer(web_profile=True, web_profile_dialog=self.consent)
             self.hub.start()
             self.client.connect()
         for mtype in SAMP_TYPES:
@@ -227,7 +257,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle('Target List Generator')
         self.thread = self.worker = None
-        self.samp = Samp()
+        self.samp = Samp(WebConsent(self))
         self.samp.table.connect(self.samp_table)
         self.samp.failed.connect(lambda msg: QMessageBox.warning(self, 'SAMP', msg))
 
@@ -235,7 +265,7 @@ class MainWindow(QMainWindow):
         self.target_list = QLineEdit(placeholderText='CSV, FITS, VOTable, ...')
         self.from_samp = False
         self.table_df = None
-        self.listen = QCheckBox('Listen for TOPCAT (SAMP)')
+        self.listen = QCheckBox('Listen for SAMP (TOPCAT, Aladin, web pages)')
         self.listen.toggled.connect(self.toggle_samp)
         self.target_cols = ColumnMap(('shortname', 'ra', 'dec', 'mag', 'spt', 'pmra', 'pmdec', 'epoch', 'priority'))
         self.target_cols.changed.connect(self.check_table)
@@ -468,7 +498,8 @@ class MainWindow(QMainWindow):
             self.listen.blockSignals(False)
             QMessageBox.critical(self, 'SAMP', f'Could not connect: {err}')
             return
-        self.log.appendPlainText('Listening for tables from TOPCAT (SAMP)' if on else 'Stopped listening (SAMP)')
+        self.log.appendPlainText('Listening for tables over SAMP (TOPCAT, Aladin, web pages)' if on
+                                 else 'Stopped listening (SAMP)')
 
     def samp_table(self, path: str, name: str):
         self.from_samp = True

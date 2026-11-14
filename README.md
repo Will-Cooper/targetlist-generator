@@ -55,7 +55,7 @@ Both install in editable mode, so `git pull` updates the tool.
 
 ## Using the window
 Work down the left-hand side:
-1. **Target table**: browse to a file, or tick *Listen for TOPCAT (SAMP)* and use TOPCAT's *Interop → Send table to → Target List Generator* (a SAMP hub is started if none is running). Check which column is which, including an optional priority (1 = highest): the best guesses are filled in, and planning waits until name, RA, Dec and a magnitude are chosen.
+1. **Target table**: browse to a file, or tick *Listen for SAMP* and send a table from TOPCAT (*Interop → Send table to → Target List Generator*), Aladin, or a web page with a SAMP button such as the GUCDS website. If no SAMP hub (e.g. TOPCAT) is running, the window starts its own; a web page then asks to connect and the window checks with you first. Check which column is which, including an optional priority (1 = highest): the best guesses are filled in, and planning waits until name, RA, Dec and a magnitude are chosen.
 2. **Time per target block**: the same observing time for every target (default 30 min) or a column of minutes from the table, plus the time for each standard (default 10 min) and for calibrations (default 5 min).
 3. **Night and observatory**: pick the evening from the calendar and type part of an observatory's name or alias (e.g. *irtf*, *keck*, *palma*) or enter latitude/longitude; set the airmass limit and the Moon filter (automatic by default: 10 deg from a new Moon up to 40 deg from a full one).
 4. **Telluric standards**: on or off, optionally your own list instead of the bundled one, magnitude column, spectral type, airmass tolerance and maximum distance on the sky.

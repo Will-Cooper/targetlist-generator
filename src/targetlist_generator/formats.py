@@ -219,7 +219,7 @@ SITE_FORMATS = {  # bundled observatory name -> the list format its telescopes r
 
 def defaults(site: str | None = None, from_samp: bool = False) -> tuple[str, ...]:
     """Formats to write when none are chosen: the observatory's own list format, else a VOTable for a table
-    that came from TOPCAT (SAMP), else CSV. ``site`` is a bundled observatory name or alias."""
+    sent over SAMP (TOPCAT, a web page), else CSV. ``site`` is a bundled observatory name or alias."""
     if site:
         name = find_site(site)['name']
         if name in SITE_FORMATS:

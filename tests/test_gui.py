@@ -191,3 +191,49 @@ def test_own_standards_in_window(window, tmp_path):
     assert kw['standards_file'] == str(path) and kw['std_band'] == 'jmag' and kw['std_columns']['shortname'] == 'star'
     window.std_file.clear()
     assert window.std_cols.choice()['mag'] == 'k'
+
+
+def test_web_page_consent(window, monkeypatch):
+    """A web page's request to join our hub is put to the user; the answer goes back to the hub."""
+    import queue
+
+    from PySide6.QtWidgets import QMessageBox
+    asked = []
+    monkeypatch.setattr(QMessageBox, 'question', lambda *a: asked.append(a[2]) or QMessageBox.No)
+    consent = window.samp.consent
+    consent.queue_request, consent.queue_result = queue.Queue(), queue.Queue()
+    consent.queue_request.put(({'samp.name': 'GUCDS'}, ('127.0.0.1', 5000), 'https://gucds.example'))
+    consent.poll()
+    assert 'GUCDS (https://gucds.example)' in asked[0] and consent.queue_result.get_nowait() is False
+
+
+def test_own_hub_has_web_profile(window, monkeypatch):
+    """With no hub running, the window's own hub accepts web pages (after consent)."""
+    import pyvo.samp
+    made = {}
+
+    class NoHub:
+        def __init__(self, **kw):
+            self.connected = False
+
+        def connect(self):
+            if 'hub' not in made:
+                raise pyvo.samp.SAMPHubError('no hub')
+
+        def bind_receive_notification(self, *a):
+            pass
+
+        bind_receive_call = bind_receive_notification
+
+    class Hub:
+        def __init__(self, **kw):
+            made['hub'] = kw
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(pyvo.samp, 'SAMPIntegratedClient', NoHub)
+    monkeypatch.setattr(pyvo.samp, 'SAMPHubServer', Hub)
+    window.samp.start()
+    assert made['hub'] == {'web_profile': True, 'web_profile_dialog': window.samp.consent}
+    window.samp.client = window.samp.hub = None  # stand-ins: nothing to stop
