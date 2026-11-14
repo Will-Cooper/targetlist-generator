@@ -55,7 +55,7 @@ Both install in editable mode, so `git pull` updates the tool.
 
 ## Using the window
 Work down the left-hand side:
-1. **Target table**: browse to a file, or tick *Listen for TOPCAT (SAMP)* and use TOPCAT's *Interop → Send table to → Target List Generator* (a SAMP hub is started if none is running). The window checks the table has the columns it needs before you can plan.
+1. **Target table**: browse to a file, or tick *Listen for TOPCAT (SAMP)* and use TOPCAT's *Interop → Send table to → Target List Generator* (a SAMP hub is started if none is running). Check which column is which: the best guesses are filled in, and planning waits until name, RA, Dec and a magnitude are chosen.
 2. **Time per target block**: the same observing time for every target (default 30 min) or a column of minutes from the table, plus the time for each standard (default 10 min) and for calibrations (default 5 min), and optionally a priority column (picked automatically when the table has one called `priority`).
 3. **Night and observatory**: pick the evening from the calendar and type part of an observatory's name or alias (e.g. *irtf*, *keck*, *palma*) or enter latitude/longitude; set the airmass limit and the Moon filter (automatic by default: 10 deg from a new Moon up to 40 deg from a full one).
 4. **Telluric standards**: on or off, optionally your own list instead of the bundled one, magnitude column, spectral type, airmass tolerance and maximum distance on the sky.
@@ -81,6 +81,7 @@ From the command line: `targetlist make examples/example_targets.csv --date 2026
 targetlist make targets.csv --date 2026-11-30 --site irtf
 targetlist make targets.fits --date 2026-11-30 --site lapalma --target-time-col exptime --formats irtf,keck,votable
 targetlist make targets.csv --date 2026-11-30 --lat 28.76 --lon -17.88 --min-moon-sep off --finders
+targetlist make vizier.vot --date 2026-11-30 --site keck --columns name=designation,spt= --mag-col kmag
 targetlist make targets.csv -r 20h 4h -d -30 60 --no-standards
 targetlist finder targets.csv J1023+2215 J0004-4044 --survey CDS/P/2MASS/J
 targetlist sites keck
@@ -88,8 +89,9 @@ targetlist sites keck
 `targetlist make -h` lists every option.
 
 ### Input
-CSV, FITS, ECSV, VOTable, or a previous IRTF `.txt` output.
-Column names are case-insensitive; required are `shortname` (or `name`), `ra`, `dec`, `spt` and a magnitude column (`--mag-col`, default `tmassk`).
+CSV, TSV, plain text tables (`.txt`, `.dat`, whitespace-separated with a header line, or IPAC `.tbl`), FITS (also gzipped), VOTable (`.vot`, `.xml`), ECSV, or one of this tool's own IRTF lists.
+A table needs a name, RA, Dec and a magnitude for each target; spectral type, proper motions and epoch are optional.
+The columns are guessed from common names (case-insensitive: e.g. `name`, `designation`, `ra`, `RAJ2000`, `dec`, `DEJ2000`, `spt`, `SpT`, `tmassk`, `Kmag`); choose others in the window, or with `--mag-col` and `--columns name=…,ra=…,dec=…,spt=…,pmra=…,pmdec=…,epoch=…` (an empty value ignores a field).
 RA and Dec can be decimal degrees or sexagesimal strings (`10:23:00`, `10h23m00s`); spectral types can be strings or numbers (M0 = 60, L0 = 70, T0 = 80, Y0 = 90).
 `epoch`, `pmra` and `pmdec` are used when present (defaults 2000, 0, 0); proper motions are mas/yr with `pmra` including cos(Dec), as in Gaia.
 An optional `priority` column (1 = highest to 5 = lowest; another column with `--priority-col`) is used when targets compete for time; every target needs a value.
@@ -108,7 +110,7 @@ Each standard is chosen for the time it will be observed, straight after its tar
 Short slews come first: when no nearby standard matches the airmass, the closest match within `--std-max-sep` is used, and only when there is no standard that near at all is one further away taken; both compromises are noted in the plan's `std_note`.
 Without a night, the standard nearest on the sky to where the target will be after its block is used.
 Choose the magnitude band with `--std-band` (bundled list: B, V, G, J, H or K) and a single spectral type with `--std-spt`.
-To use your own standards instead, give `--standards-file` (or *Your own list* in the window's standards section): any table the tool reads (CSV, FITS, VOTable, ...) with `name` (or `shortname`), `ra`, `dec` (degrees or sexagesimal) and a magnitude column, named with `--std-band`; spectral types (`spt`) and proper motions (`pmra`, `pmdec`) are used when present.
+To use your own standards instead, give `--standards-file` (or *Your own list* in the window's standards section): any table the tool reads, with a name, RA, Dec (degrees or sexagesimal) and a magnitude column (`--std-band`); spectral types and proper motions are used when present. Its columns are guessed the same way; correct them in the window or with `--std-columns`.
 
 ### Output (in `--out-dir`, default `targetlist_out/`)
 With a night, always `<name>_plan.csv` (status, target and standard times, airmasses, standard distance, Moon separation) and `visibility/<name>_NN_UThhmm-hhmm.png` (ten targets per plot, numbered in plan order and named by the UT span of their blocks).

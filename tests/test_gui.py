@@ -23,7 +23,7 @@ def test_gui_plan_prompts_for_folder(qtbot, window, target_csv, tmp_path, monkey
     asked = []
     monkeypatch.setattr(QFileDialog, 'getExistingDirectory', lambda *a: asked.append(a[1]) or str(tmp_path))
     window.load_targets(str(target_csv))
-    assert window.mag_col.currentText() == 'tmassk'
+    assert window.target_cols.choice()['mag'] == 'tmassk' and window.target_cols.choice()['shortname'] == 'name'
     assert window.table_status.text().startswith('25 targets') and window.run_button.isEnabled()
     assert window.site.currentText().startswith('NASA Infrared Telescope Facility')
     assert window.lat.value() == pytest.approx(19.826, abs=1e-3)
@@ -34,8 +34,8 @@ def test_gui_plan_prompts_for_folder(qtbot, window, target_csv, tmp_path, monkey
     headers = [window.table.horizontalHeaderItem(j).text() for j in range(window.table.columnCount())]
     assert {'status', 'target_start', 'standard', 'std_sep'} <= set(headers)
     assert (tmp_path / 'targets_irtf.txt').exists() and not (tmp_path / 'targets_list.csv').exists()
-    assert window.plot_pages.count() == window.plots.count() >= 1
-    assert window.tabs.tabText(1) == f'Visibility ({window.plot_pages.count()})'
+    assert len(window.items['visibility']) == window.plots.count() >= 1 and window.plot_view.count() == 1
+    assert window.tabs.tabText(1) == f'Visibility ({window.plots.count()})'
     assert window.status.text().startswith('Saved') and window.progress.value() == 1
 
 
@@ -57,11 +57,19 @@ def test_default_formats_follow_observatory(window):
     assert ticked() == ['eso', 'votable']
 
 
-def test_missing_column_blocks_planning(window, tmp_path):
-    path = tmp_path / 'nospt.csv'
-    pd.DataFrame({'name': ['a'], 'ra': [10.0], 'dec': [20.0], 'tmassk': [12.0]}).to_csv(path, index=False)
+def test_columns_guessed_and_chosen(window, tmp_path):
+    """Unrecognised names leave a field to choose (planning blocked); choosing it unblocks."""
+    path = tmp_path / 'odd.csv'
+    pd.DataFrame({'Designation': ['a'], 'alpha_deg': [10.0], 'DEJ2000': [20.0], 'Kmag': [12.0]}).to_csv(
+        path, index=False)
     window.load_targets(str(path))
-    assert "missing columns ['spt']" in window.table_status.text() and not window.run_button.isEnabled()
+    choice = window.target_cols.choice()
+    assert choice['shortname'] == 'designation' and choice['dec'] == 'dej2000' and choice['ra'] is None
+    assert 'Choose the column for RA' in window.table_status.text() and not window.run_button.isEnabled()
+    window.target_cols.boxes['ra'].setCurrentText('alpha_deg')
+    assert window.table_status.text() == '1 targets ready.' and window.run_button.isEnabled()
+    window.target_list.setText(str(path))
+    assert window.kwargs()['target_columns']['ra'] == 'alpha_deg'
 
 
 def test_charts_appear_as_made(window, tmp_path):
@@ -72,10 +80,13 @@ def test_charts_appear_as_made(window, tmp_path):
     fig.savefig(png)
     window.add_figure('finder', 'A', fig)
     window.add_figure('finder', 'B', png)  # an Aladin PNG
-    assert window.chart_pages.count() == 2 and window.tabs.tabText(2) == 'Finder charts (2)'
+    assert len(window.items['finder']) == 2 and window.tabs.tabText(2) == 'Finder charts (2)'
     from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-    canvas = window.chart_pages.widget(0).findChild(FigureCanvasQTAgg)
-    assert window.chart_pages.widget(1).findChild(FigureCanvasQTAgg) is not None
+    window.charts.setCurrentRow(1)  # the PNG, drawn in the one canvas
+    assert window.chart_view.count() == 1 and window.chart_view.widget(0).findChild(FigureCanvasQTAgg)
+    window.charts.setCurrentRow(0)
+    canvas = window.chart_view.widget(0).findChild(FigureCanvasQTAgg)
+    assert canvas.figure is fig
     canvas.figure.axes[0].set_xlim(0.2, 0.4)  # what the toolbar's zoom does
     canvas.draw()
     assert canvas.figure.axes[0].get_xlim() == (0.2, 0.4)
@@ -128,7 +139,7 @@ def test_gui_receives_samp_table(qtbot, window, target_csv, tmp_path):
             with qtbot.waitSignal(window.samp.table, timeout=20_000):
                 topcat.notify_all({'samp.mtype': 'table.load.votable',
                                    'samp.params': {'url': vot.as_uri(), 'name': 'sent'}})
-            assert window.target_list.text().endswith('.vot') and window.mag_col.currentText() == 'tmassk'
+            assert window.target_list.text().endswith('.vot') and window.target_cols.choice()['mag'] == 'tmassk'
             assert window.from_samp
         finally:
             topcat.disconnect()
@@ -166,13 +177,14 @@ def test_priority_column_picked_up(window, target_csv, tmp_path):
 
 
 def test_own_standards_in_window(window, tmp_path):
-    from targetlist_generator import standards
+    assert window.std_cols.choice()['mag'] == 'k'  # bundled list
     path = tmp_path / 'mine.csv'
-    pd.DataFrame({'name': ['S1'], 'ra': [10.0], 'dec': [5.0], 'jmag': [7.5], 'kmag': [7.0]}).to_csv(path, index=False)
+    pd.DataFrame({'star': ['S1'], 'ra': [10.0], 'dec': [5.0], 'jmag': [7.5], 'kmag': [7.0]}).to_csv(path, index=False)
     window.load_standards_file(str(path))
-    assert [window.std_band.itemText(i) for i in range(window.std_band.count())] == ['jmag', 'kmag']
-    assert window.std_band.currentText() == 'kmag'
+    assert window.std_cols.choice()['mag'] == 'kmag' and window.std_cols.choice()['shortname'] == 'star'
+    window.std_cols.boxes['mag'].setCurrentText('jmag')
     window.target_list.setText('x.csv')
-    assert window.kwargs()['standards_file'] == str(path)
+    kw = window.kwargs()
+    assert kw['standards_file'] == str(path) and kw['std_band'] == 'jmag' and kw['std_columns']['shortname'] == 'star'
     window.std_file.clear()
-    assert window.std_band.currentText() == 'K' and window.std_band.count() == len(standards.BANDS)
+    assert window.std_cols.choice()['mag'] == 'k'

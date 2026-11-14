@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from urllib.request import urlretrieve
 
+import pandas as pd
 import PySide6
 from matplotlib.figure import Figure
 from matplotlib.image import imread
@@ -46,10 +47,10 @@ from .pipeline import PLAN_COLUMNS, make_targetlist
 
 CUSTOM = 'Custom (latitude/longitude below)'
 DEFAULT_SITE = 'NASA Infrared Telescope Facility'
-TABLES = 'Tables (*.csv *.fits *.fit *.ecsv *.vot *.xml *.txt);;All files (*)'
+TABLES = ('Tables (*.csv *.tsv *.txt *.dat *.tbl *.fits *.fit *.gz *.vot *.xml *.ecsv);;All files (*)')
 SAMP_TYPES = {'table.load.votable': '.vot', 'table.load.fits': '.fits'}
-COLUMNS_HELP = ('Needs: name (or shortname), ra, dec, spt and a magnitude column. '
-                'Optional: pmra, pmdec (mas/yr), epoch, minutes per target, priority (1 highest to 5 lowest).')
+COLUMNS_HELP = ('Check which column is which (best guesses are filled in): name, RA, Dec and a magnitude are '
+                'needed; the rest are optional.')
 NO_PRIORITY = '(none)'
 ERROR = 'color: #B00020'
 
@@ -72,6 +73,51 @@ def compact(*combos: QComboBox, chars: int = 22) -> None:
     for combo in combos:
         combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         combo.setMinimumContentsLength(chars)
+
+
+class ColumnMap(QWidget):
+    """Which table column holds each field, starting from the best guesses."""
+    FIELDS = ('shortname', 'ra', 'dec', 'mag', 'spt', 'pmra', 'pmdec', 'epoch')
+    LABELS = ('Name', 'RA', 'Dec', 'Magnitude', 'Spectral type', 'pmRA [mas/yr]', 'pmDec [mas/yr]', 'Epoch')
+    REQUIRED = ('shortname', 'ra', 'dec', 'mag')
+    NONE = '(none)'
+    changed = Signal()
+
+    def __init__(self):
+        super().__init__()
+        grid = QGridLayout(self)
+        grid.setContentsMargins(0, 0, 0, 0)
+        self.boxes = {}
+        for n, (field, label) in enumerate(zip(self.FIELDS, self.LABELS, strict=True)):
+            box = self.boxes[field] = QComboBox()
+            compact(box, chars=10)
+            box.currentTextChanged.connect(lambda _: self.changed.emit())
+            grid.addWidget(QLabel(label), n // 2, 2 * (n % 2))
+            grid.addWidget(box, n // 2, 2 * (n % 2) + 1)
+
+    def set_table(self, df: pd.DataFrame):
+        """Offer the table's columns for each field, selecting the best guess."""
+        columns = list(df.columns)
+        guess = io.guess_columns(columns)
+        guess['mag'] = next((c for c in io.MAGNITUDES if c in columns), None)
+        for field, box in self.boxes.items():
+            box.blockSignals(True)
+            box.clear()
+            box.addItems([self.NONE, *columns])
+            box.setCurrentText(guess[field] or self.NONE)
+            box.blockSignals(False)
+        self.changed.emit()
+
+    def choice(self) -> dict[str, str | None]:
+        return {f: (None if b.currentText() == self.NONE else b.currentText()) for f, b in self.boxes.items()}
+
+    def columns(self) -> dict[str, str | None]:
+        """The mapping for ``io.apply_columns`` (the magnitude goes separately)."""
+        return {f: c for f, c in self.choice().items() if f != 'mag'}
+
+    def missing(self) -> list[str]:
+        labels = dict(zip(self.FIELDS, self.LABELS, strict=True))
+        return [labels[f] for f in self.REQUIRED if self.choice()[f] is None]
 
 
 def figure_page(fig: Figure) -> QWidget:
@@ -190,16 +236,16 @@ class MainWindow(QMainWindow):
         self.table_df = None
         self.listen = QCheckBox('Listen for TOPCAT (SAMP)')
         self.listen.toggled.connect(self.toggle_samp)
-        self.mag_col = QComboBox(editable=True)
-        self.mag_col.currentTextChanged.connect(self.check_table)
+        self.target_cols = ColumnMap()
+        self.target_cols.changed.connect(self.check_table)
         columns_help = QLabel(COLUMNS_HELP, wordWrap=True)
         self.table_status = QLabel(wordWrap=True)
         table = QGroupBox('1. Target table')
         table_form = QFormLayout(table)
         table_form.addRow('File', self.with_browse(self.target_list, self.browse_targets))
         table_form.addRow('', self.listen)
-        table_form.addRow('Magnitude column', self.mag_col)
         table_form.addRow(columns_help)
+        table_form.addRow(self.target_cols)
         table_form.addRow(self.table_status)
 
         # 2. times
@@ -251,15 +297,16 @@ class MainWindow(QMainWindow):
         # 4. standards
         self.stds = QGroupBox('4. Telluric standards', checkable=True)
         self.std_file = QLineEdit(placeholderText='bundled list: B9V-A1V, K = 5-9 mag')
-        self.std_file.textChanged.connect(lambda text: text or self.set_std_bands(standards.BANDS, 'K'))
-        self.std_band, self.std_spt = QComboBox(editable=True), QComboBox()
-        self.std_band.addItems(standards.BANDS)
-        self.std_band.setCurrentText('K')
+        self.std_cols = ColumnMap()
+        self.std_cols.set_table(io.read_table(str(standards.BUNDLED)))
+        self.std_file.textChanged.connect(
+            lambda text: text or self.std_cols.set_table(io.read_table(str(standards.BUNDLED))))
+        self.std_spt = QComboBox()
         self.std_spt.addItems(('any', 'A0V', 'A1V', 'B9V'))
         self.std_tol = spin(0.01, 1, 0.1, 2, 0.05)
         self.std_sep = spin(1, 90, 20, 0, 5)
         form(self.stds, (('Your own list (optional)', self.with_browse(self.std_file, self.browse_standards)),
-                         ('Magnitude column', self.std_band), ('Spectral type', self.std_spt),
+                         ('Columns', self.std_cols), ('Only spectral type', self.std_spt),
                          ('Airmass tolerance', self.std_tol), ('Max distance [deg]', self.std_sep)))
 
         # 5. optional RA/Dec box
@@ -297,7 +344,7 @@ class MainWindow(QMainWindow):
         self.progress = QProgressBar(textVisible=False)
         self.progress.setRange(0, 1)
         self.status = QLabel(wordWrap=True)
-        compact(self.mag_col, self.time_col, self.priority_col, self.site, self.survey, self.std_band)
+        compact(self.time_col, self.priority_col, self.site, self.survey)
 
         inputs = QWidget()
         column = QVBoxLayout(inputs)
@@ -314,19 +361,21 @@ class MainWindow(QMainWindow):
 
         self.log = QPlainTextEdit(readOnly=True)
         self.table = QTableWidget()
+        # one canvas per tab, swapped to the selected figure: thousands of targets give hundreds of figures
+        self.items = {'visibility': [], 'finder': []}
         self.plots = QComboBox()
-        self.plot_pages = QStackedWidget()
-        self.plots.currentIndexChanged.connect(self.plot_pages.setCurrentIndex)
+        self.plot_view = QStackedWidget()
+        self.plots.currentIndexChanged.connect(lambda i: self.show_item('visibility', i))
         plot_view = QWidget()
         plot_layout = QVBoxLayout(plot_view)
         plot_layout.addWidget(self.plots)
-        plot_layout.addWidget(self.plot_pages)
+        plot_layout.addWidget(self.plot_view)
         self.charts = QListWidget()
-        self.chart_pages = QStackedWidget()
-        self.charts.currentRowChanged.connect(self.chart_pages.setCurrentIndex)
+        self.chart_view = QStackedWidget()
+        self.charts.currentRowChanged.connect(lambda i: self.show_item('finder', i))
         chart_view = QSplitter()
         chart_view.addWidget(self.charts)
-        chart_view.addWidget(self.chart_pages)
+        chart_view.addWidget(self.chart_view)
         chart_view.setSizes([160, 600])
         self.tabs = QTabWidget()
         self.tabs.addTab(self.table, 'Plan')
@@ -367,17 +416,10 @@ class MainWindow(QMainWindow):
         except (OSError, ValueError) as err:
             QMessageBox.critical(self, 'Cannot read standards', str(err))
             return
-        numeric = list(df.select_dtypes('number').columns.drop(['ra', 'dec'], errors='ignore'))
         self.std_file.setText(path)
-        self.set_std_bands(numeric, next((c for c in numeric if c in ('k', 'kmag', 'tmassk')), None))
-        if 'spt' not in df.columns:
+        self.std_cols.set_table(df)
+        if self.std_cols.choice()['spt'] is None:
             self.std_spt.setCurrentText('any')
-
-    def set_std_bands(self, bands, choice: str | None):
-        self.std_band.clear()
-        self.std_band.addItems(list(bands))
-        if choice:
-            self.std_band.setCurrentText(choice)
 
     def browse_out(self):
         path = QFileDialog.getExistingDirectory(self, 'Where should the lists and charts be saved?',
@@ -394,31 +436,32 @@ class MainWindow(QMainWindow):
             return
         self.target_list.setText(path)
         numeric = list(df.select_dtypes('number').columns.drop(['ra', 'dec'], errors='ignore'))
-        for box in (self.mag_col, self.time_col):
-            box.clear()
-            box.addItems(numeric)
+        self.time_col.clear()
+        self.time_col.addItems(numeric)
         self.priority_col.clear()
         self.priority_col.addItems([NO_PRIORITY, *numeric])
         self.priority_col.setCurrentText('priority' if 'priority' in numeric else NO_PRIORITY)
         self.table_df = df
-        self.mag_col.setCurrentText('tmassk' if 'tmassk' in df.columns else self.mag_col.itemText(0))
         self.log.appendPlainText(f'{label or path}: {len(df)} rows, columns {list(df.columns)}')
-        self.check_table()
+        self.target_cols.set_table(df)
 
     def check_table(self):
         """Say whether the loaded table has the required columns; planning waits until it does."""
         if self.table_df is None:
             return
+        missing = self.target_cols.missing()
         try:
-            n = len(io.normalise(self.table_df.copy(), self.mag_col.currentText(), source='This table'))
+            if missing:
+                raise ValueError(f'Choose the column for {", ".join(missing)}')
+            n = len(io.normalise(io.apply_columns(self.table_df.copy(), self.target_cols.columns()),
+                                 self.target_cols.choice()['mag'], source='This table'))
         except ValueError as err:
             self.table_status.setStyleSheet(ERROR)
-            self.table_status.setText(f"Can't plan yet. {err}. Add or rename the column, or choose another "
-                                      'magnitude column.')
+            self.table_status.setText(f"Can't plan yet. {err}.")
             self.run_button.setEnabled(False)
             return
         self.table_status.setStyleSheet('')
-        self.table_status.setText(f'{n} targets, all required columns found.')
+        self.table_status.setText(f'{n} targets ready.')
         self.run_button.setEnabled(True)
 
     def toggle_samp(self, on: bool):
@@ -476,11 +519,13 @@ class MainWindow(QMainWindow):
             raise ValueError('Tick at least one output format')
         mirror = self.mirror.text().strip()
         kw = {'target_list': self.target_list.text(), 'out_dir': self.out_dir.text(),
-              'mag_col': self.mag_col.currentText(), 'target_time': self.target_time.value(),
+              'mag_col': self.target_cols.choice()['mag'], 'target_columns': self.target_cols.columns(),
+              'target_time': self.target_time.value(),
               'target_time_col': self.time_col.currentText() if self.time_column.isChecked() else None,
               'cal_time': self.cal_time.value(), 'std_time': self.std_time.value(),
               'priority_col': '' if self.priority_col.currentText() == NO_PRIORITY else self.priority_col.currentText(),
-              'with_standards': self.stds.isChecked(), 'std_band': self.std_band.currentText(),
+              'with_standards': self.stds.isChecked(), 'std_band': self.std_cols.choice()['mag'] or '',
+              'std_columns': self.std_cols.columns(),
               'standards_file': self.std_file.text() or None,
               'std_spt': None if self.std_spt.currentText() == 'any' else self.std_spt.currentText(),
               'std_airmass_tol': self.std_tol.value(), 'std_max_sep': self.std_sep.value(), 'outputs': keys,
@@ -515,10 +560,14 @@ class MainWindow(QMainWindow):
                 return
             kwargs['out_dir'] = self.out_dir.text()
         self.run_button.setEnabled(False)
-        for combo, pages in ((self.plots, self.plot_pages), (self.charts, self.chart_pages)):
-            combo.clear()
-            while pages.count():
-                pages.removeWidget(pages.widget(0))
+        for kind in self.items:
+            self.items[kind] = []
+        self.plots.clear()
+        self.charts.clear()
+        for view in (self.plot_view, self.chart_view):
+            while view.count():
+                view.widget(0).deleteLater()
+                view.removeWidget(view.widget(0))
         self.set_tab_counts()
         self.status.setStyleSheet('')
         self.tabs.setCurrentWidget(self.log)
@@ -543,7 +592,7 @@ class MainWindow(QMainWindow):
         if 'status' in rows.columns:  # planned night
             shown = rows[[c for c in PLAN_COLUMNS if c in rows.columns and c not in ('ra', 'dec')]]
         else:
-            shown = io.formatted(rows, self.mag_col.currentText().lower())
+            shown = io.formatted(rows, self.target_cols.choice()['mag'].lower())
         self.table.setColumnCount(len(shown.columns))
         self.table.setRowCount(len(shown))
         self.table.setHorizontalHeaderLabels(list(shown.columns))
@@ -573,18 +622,32 @@ class MainWindow(QMainWindow):
         self.status.setText(message)
 
     def add_figure(self, kind: str, name: str, item):
-        """Show a visibility plot or finder chart as soon as it is made."""
-        fig = item if isinstance(item, Figure) else png_figure(Path(item))
-        combo, pages = (self.plots, self.plot_pages) if kind == 'visibility' else (self.charts, self.chart_pages)
-        pages.addWidget(figure_page(fig))
-        combo.addItem(name)
-        if pages.count() == 1:
-            combo.setCurrentRow(0) if combo is self.charts else combo.setCurrentIndex(0)
+        """List a visibility plot or finder chart as soon as it is made; the first one is shown."""
+        self.items[kind].append(item)
+        if kind == 'visibility':
+            self.plots.addItem(name)
+        else:
+            self.charts.addItem(name)
+            if self.charts.count() == 1:
+                self.charts.setCurrentRow(0)
         self.set_tab_counts()
 
+    def show_item(self, kind: str, index: int):
+        """Draw the selected figure in the tab's one canvas (with zoom/pan toolbar)."""
+        if not 0 <= index < len(self.items[kind]):
+            return
+        item = self.items[kind][index]
+        view = self.plot_view if kind == 'visibility' else self.chart_view
+        while view.count():
+            old = view.widget(0)
+            view.removeWidget(old)
+            old.deleteLater()
+        view.addWidget(figure_page(item if isinstance(item, Figure) else png_figure(Path(item))))
+
     def set_tab_counts(self):
-        for index, label, pages in ((1, 'Visibility', self.plot_pages), (2, 'Finder charts', self.chart_pages)):
-            self.tabs.setTabText(index, f'{label} ({pages.count()})' if pages.count() else label)
+        for index, label, kind in ((1, 'Visibility', 'visibility'), (2, 'Finder charts', 'finder')):
+            n = len(self.items[kind])
+            self.tabs.setTabText(index, f'{label} ({n})' if n else label)
 
     def open_output(self):
         if self.out_dir.text():
