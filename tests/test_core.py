@@ -327,18 +327,17 @@ def test_priority_wins_when_night_is_full():
 
 
 def test_priority_column(target_csv, tmp_path):
-    from targetlist_generator.pipeline import with_priority
     df = pd.read_csv(target_csv).assign(priority=1)
     df.loc[3, 'priority'] = None
     path = tmp_path / 'p.csv'
     df.to_csv(path, index=False)
     with pytest.raises(ValueError, match='Priority must be 1'):
         make_targetlist(path, tmp_path, log=lambda s: None, date='2026-11-30', **IRTF)
-    targets = io.read_targets(path)
-    assert 'priority' not in with_priority(targets, '').columns  # '' ignores priorities
+    assert 'priority' not in io.read_targets(path, columns={'priority': None}).columns  # None ignores priorities
     df.loc[3, 'priority'] = 2
     df.rename(columns={'priority': 'rank'}).to_csv(path, index=False)
-    plan, _ = make_targetlist(path, tmp_path, priority_col='rank', log=lambda s: None, date='2026-11-30', **IRTF)
+    plan, _ = make_targetlist(path, tmp_path, target_columns={'priority': 'rank'}, log=lambda s: None,
+                              date='2026-11-30', **IRTF)
     assert set(plan['priority']) <= {1, 2}
     assert 'priority' in pd.read_csv(tmp_path / 'p_plan.csv').columns
 
@@ -361,3 +360,15 @@ def test_own_standards_list(target_csv, tmp_path):
         standards.load_standards('tmassk', 'K', path=path)
     with pytest.raises(ValueError, match='no spt column'):
         standards.load_standards('tmassk', 'kmag', spt='A0V', path=path)
+
+
+def test_plan_is_an_observing_sequence(target_csv, tmp_path):
+    """The plan CSV lists each target followed by its standard, the standard after target + calibrations."""
+    make_targetlist(target_csv, tmp_path, target_time=30, cal_time=5, std_time=10, log=lambda s: None,
+                    date='2026-11-30', **IRTF)
+    seq = pd.read_csv(tmp_path / 'targets_plan.csv')
+    assert list(seq['kind'][:4]) == ['target', 'standard', 'target', 'standard'] and list(seq['step'][:2]) == [1, 2]
+    target, std = seq.iloc[0], seq.iloc[1]
+    assert pd.Timestamp(std['start_utc']) - pd.Timestamp(target['end_utc']) == pd.Timedelta(minutes=5)
+    assert pd.Timestamp(std['end_utc']) - pd.Timestamp(std['start_utc']) == pd.Timedelta(minutes=10)
+    assert np.isfinite(std['ra']) and std['separation_deg'] <= 20

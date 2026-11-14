@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import finder, formats, io, sky, standards
-from .pipeline import PLAN_COLUMNS, make_targetlist
+from .pipeline import make_targetlist, plan_sequence
 
 CUSTOM = 'Custom (latitude/longitude below)'
 DEFAULT_SITE = 'NASA Infrared Telescope Facility'
@@ -51,7 +51,6 @@ TABLES = ('Tables (*.csv *.tsv *.txt *.dat *.tbl *.fits *.fit *.gz *.vot *.xml *
 SAMP_TYPES = {'table.load.votable': '.vot', 'table.load.fits': '.fits'}
 COLUMNS_HELP = ('Check which column is which (best guesses are filled in): name, RA, Dec and a magnitude are '
                 'needed; the rest are optional.')
-NO_PRIORITY = '(none)'
 ERROR = 'color: #B00020'
 
 
@@ -77,18 +76,21 @@ def compact(*combos: QComboBox, chars: int = 22) -> None:
 
 class ColumnMap(QWidget):
     """Which table column holds each field, starting from the best guesses."""
-    FIELDS = ('shortname', 'ra', 'dec', 'mag', 'spt', 'pmra', 'pmdec', 'epoch')
-    LABELS = ('Name', 'RA', 'Dec', 'Magnitude', 'Spectral type', 'pmRA [mas/yr]', 'pmDec [mas/yr]', 'Epoch')
+    LABELS = {'shortname': 'Name', 'ra': 'RA', 'dec': 'Dec', 'mag': 'Magnitude', 'spt': 'Spectral type',
+              'pmra': 'pmRA [mas/yr]', 'pmdec': 'pmDec [mas/yr]', 'epoch': 'Epoch',
+              'priority': 'Priority (1 = highest)'}
     REQUIRED = ('shortname', 'ra', 'dec', 'mag')
     NONE = '(none)'
     changed = Signal()
 
-    def __init__(self):
+    def __init__(self, fields: tuple[str, ...] = ('shortname', 'ra', 'dec', 'mag', 'spt', 'pmra', 'pmdec', 'epoch')):
         super().__init__()
+        self.fields = fields
         grid = QGridLayout(self)
         grid.setContentsMargins(0, 0, 0, 0)
         self.boxes = {}
-        for n, (field, label) in enumerate(zip(self.FIELDS, self.LABELS, strict=True)):
+        for n, field in enumerate(fields):
+            label = self.LABELS[field]
             box = self.boxes[field] = QComboBox()
             compact(box, chars=10)
             box.currentTextChanged.connect(lambda _: self.changed.emit())
@@ -116,8 +118,7 @@ class ColumnMap(QWidget):
         return {f: c for f, c in self.choice().items() if f != 'mag'}
 
     def missing(self) -> list[str]:
-        labels = dict(zip(self.FIELDS, self.LABELS, strict=True))
-        return [labels[f] for f in self.REQUIRED if self.choice()[f] is None]
+        return [self.LABELS[f] for f in self.REQUIRED if self.choice()[f] is None]
 
 
 def figure_page(fig: Figure) -> QWidget:
@@ -236,7 +237,7 @@ class MainWindow(QMainWindow):
         self.table_df = None
         self.listen = QCheckBox('Listen for TOPCAT (SAMP)')
         self.listen.toggled.connect(self.toggle_samp)
-        self.target_cols = ColumnMap()
+        self.target_cols = ColumnMap(('shortname', 'ra', 'dec', 'mag', 'spt', 'pmra', 'pmdec', 'epoch', 'priority'))
         self.target_cols.changed.connect(self.check_table)
         columns_help = QLabel(COLUMNS_HELP, wordWrap=True)
         self.table_status = QLabel(wordWrap=True)
@@ -253,14 +254,11 @@ class MainWindow(QMainWindow):
         self.time_same.setChecked(True)
         self.target_time = spin(1, 600, 30, 0, 5)
         self.time_col = QComboBox()
-        self.priority_col = QComboBox()
-        self.priority_col.addItem(NO_PRIORITY)
         self.std_time = spin(0, 120, 10, 0, 5)
         self.cal_time = spin(0, 120, 5, 0, 5)
         times = form(QGroupBox('2. Time per target block'), (
             (self.time_same, self.target_time), (self.time_column, self.time_col),
-            ('Standard [min]', self.std_time), ('Calibrations [min]', self.cal_time),
-            ('Priority column (1 = highest)', self.priority_col)))
+            ('Standard [min]', self.std_time), ('Calibrations [min]', self.cal_time)))
 
         # 3. night
         self.night = QGroupBox('3. Night and observatory', checkable=True)
@@ -344,7 +342,7 @@ class MainWindow(QMainWindow):
         self.progress = QProgressBar(textVisible=False)
         self.progress.setRange(0, 1)
         self.status = QLabel(wordWrap=True)
-        compact(self.time_col, self.priority_col, self.site, self.survey)
+        compact(self.time_col, self.site, self.survey)
 
         inputs = QWidget()
         column = QVBoxLayout(inputs)
@@ -438,9 +436,6 @@ class MainWindow(QMainWindow):
         numeric = list(df.select_dtypes('number').columns.drop(['ra', 'dec'], errors='ignore'))
         self.time_col.clear()
         self.time_col.addItems(numeric)
-        self.priority_col.clear()
-        self.priority_col.addItems([NO_PRIORITY, *numeric])
-        self.priority_col.setCurrentText('priority' if 'priority' in numeric else NO_PRIORITY)
         self.table_df = df
         self.log.appendPlainText(f'{label or path}: {len(df)} rows, columns {list(df.columns)}')
         self.target_cols.set_table(df)
@@ -523,7 +518,6 @@ class MainWindow(QMainWindow):
               'target_time': self.target_time.value(),
               'target_time_col': self.time_col.currentText() if self.time_column.isChecked() else None,
               'cal_time': self.cal_time.value(), 'std_time': self.std_time.value(),
-              'priority_col': '' if self.priority_col.currentText() == NO_PRIORITY else self.priority_col.currentText(),
               'with_standards': self.stds.isChecked(), 'std_band': self.std_cols.choice()['mag'] or '',
               'std_columns': self.std_cols.columns(),
               'standards_file': self.std_file.text() or None,
@@ -590,7 +584,8 @@ class MainWindow(QMainWindow):
     def on_done(self, result):
         rows, paths = result
         if 'status' in rows.columns:  # planned night
-            shown = rows[[c for c in PLAN_COLUMNS if c in rows.columns and c not in ('ra', 'dec')]]
+            seq = plan_sequence(rows, self.std_time.value())
+            shown = seq.drop(columns=[c for c in ('ra', 'dec') if c in seq.columns])
         else:
             shown = io.formatted(rows, self.target_cols.choice()['mag'].lower())
         self.table.setColumnCount(len(shown.columns))

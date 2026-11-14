@@ -23,6 +23,7 @@ ALIASES = {
     'pmra': ('pmra', 'pm_ra', 'pmra_cosdec', 'pmracosdec'),
     'pmdec': ('pmdec', 'pm_dec', 'pmde'),
     'epoch': ('epoch', 'ref_epoch'),
+    'priority': ('priority', 'pri', 'prio'),
 }
 MAGNITUDES = ('tmassk', 'kmag', 'ks', 'ksmag', 'k', 'k_mag', 'hmag', 'h', 'jmag', 'j', 'phot_g_mean_mag', 'gmag',
               'g', 'vmag', 'v')

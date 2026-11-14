@@ -55,15 +55,15 @@ Both install in editable mode, so `git pull` updates the tool.
 
 ## Using the window
 Work down the left-hand side:
-1. **Target table**: browse to a file, or tick *Listen for TOPCAT (SAMP)* and use TOPCAT's *Interop → Send table to → Target List Generator* (a SAMP hub is started if none is running). Check which column is which: the best guesses are filled in, and planning waits until name, RA, Dec and a magnitude are chosen.
-2. **Time per target block**: the same observing time for every target (default 30 min) or a column of minutes from the table, plus the time for each standard (default 10 min) and for calibrations (default 5 min), and optionally a priority column (picked automatically when the table has one called `priority`).
+1. **Target table**: browse to a file, or tick *Listen for TOPCAT (SAMP)* and use TOPCAT's *Interop → Send table to → Target List Generator* (a SAMP hub is started if none is running). Check which column is which, including an optional priority (1 = highest): the best guesses are filled in, and planning waits until name, RA, Dec and a magnitude are chosen.
+2. **Time per target block**: the same observing time for every target (default 30 min) or a column of minutes from the table, plus the time for each standard (default 10 min) and for calibrations (default 5 min).
 3. **Night and observatory**: pick the evening from the calendar and type part of an observatory's name or alias (e.g. *irtf*, *keck*, *palma*) or enter latitude/longitude; set the airmass limit and the Moon filter (automatic by default: 10 deg from a new Moon up to 40 deg from a full one).
 4. **Telluric standards**: on or off, optionally your own list instead of the bundled one, magnitude column, spectral type, airmass tolerance and maximum distance on the sky.
 5. Optionally an **RA/Dec box**.
 6. **Outputs**: the list format for the chosen observatory is ticked for you (otherwise CSV, or VOTable for a table sent from TOPCAT); tick others as you like, optionally finder charts, and choose where to save them (asked when you press *Plan the night* if not set).
 
 A progress bar under *Plan the night* shows what is happening (finder charts can take a few minutes when drawn by Aladin).
-The *Plan* tab shows the night: each target's block, its standard and how far the telescope moves to reach it.
+The *Plan* tab shows the night in observing order: each target followed by its standard, with start and end times, airmass and how far the telescope moves to reach the standard.
 The *Visibility* tab shows ING-style plots of every target's altitude through the night, with the planned blocks drawn thick, and the *Finder charts* tab each chart as it is made; both can be zoomed, panned and saved with the toolbar above them.
 
 ## Try it
@@ -94,7 +94,7 @@ A table needs a name, RA, Dec and a magnitude for each target; spectral type, pr
 The columns are guessed from common names (case-insensitive: e.g. `name`, `designation`, `ra`, `RAJ2000`, `dec`, `DEJ2000`, `spt`, `SpT`, `tmassk`, `Kmag`); choose others in the window, or with `--mag-col` and `--columns name=…,ra=…,dec=…,spt=…,pmra=…,pmdec=…,epoch=…` (an empty value ignores a field).
 RA and Dec can be decimal degrees or sexagesimal strings (`10:23:00`, `10h23m00s`); spectral types can be strings or numbers (M0 = 60, L0 = 70, T0 = 80, Y0 = 90).
 `epoch`, `pmra` and `pmdec` are used when present (defaults 2000, 0, 0); proper motions are mas/yr with `pmra` including cos(Dec), as in Gaia.
-An optional `priority` column (1 = highest to 5 = lowest; another column with `--priority-col`) is used when targets compete for time; every target needs a value.
+An optional priority column (1 = highest to 5 = lowest; recognised as `priority`, `pri` or `prio`, or chosen with `--columns priority=…`) is used when targets compete for time; every target needs a value.
 
 ### Planning the night
 With `--date` and an observatory (`--site`, or `--lat/--lon`), the night runs while the Sun is below `--twilight` (default −12 deg) and targets are kept if they spend at least `--min-time` minutes (default 30) at airmass ≤ `--max-airmass` (default 2) and are far enough from the Moon (`--min-moon-sep auto|off|<deg>`).
@@ -113,7 +113,7 @@ Choose the magnitude band with `--std-band` (bundled list: B, V, G, J, H or K) a
 To use your own standards instead, give `--standards-file` (or *Your own list* in the window's standards section): any table the tool reads, with a name, RA, Dec (degrees or sexagesimal) and a magnitude column (`--std-band`); spectral types and proper motions are used when present. Its columns are guessed the same way; correct them in the window or with `--std-columns`.
 
 ### Output (in `--out-dir`, default `targetlist_out/`)
-With a night, always `<name>_plan.csv` (status, target and standard times, airmasses, standard distance, Moon separation) and `visibility/<name>_NN_UThhmm-hhmm.png` (ten targets per plot, numbered in plan order and named by the UT span of their blocks).
+With a night, always `<name>_plan.csv`, the observing sequence (each target followed by its standard: step, kind, name, status, priority, start and end UTC, airmass, the standard's distance from its target, Moon separation, notes, RA and Dec) and `visibility/<name>_NN_UThhmm-hhmm.png` (ten targets per plot, numbered in plan order and named by the UT span of their blocks).
 Plus the formats chosen with `--formats`, each listing every target followed by its standard.
 The default, `auto`, writes the chosen observatory's own format (IRTF → `irtf`, Keck → `keck`, Lick → `lick`, Paranal and La Silla → `eso`, Subaru → `subaru`, MMT → `mmt`, Las Campanas → `magellan`, La Palma → `cat`), and CSV otherwise:
 

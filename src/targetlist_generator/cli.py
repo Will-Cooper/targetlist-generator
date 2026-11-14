@@ -72,8 +72,6 @@ def build_parser() -> argparse.ArgumentParser:
     times = make.add_argument_group('time per block (target, calibrations, standard) [min]')
     times.add_argument('--target-time', type=float, default=30.0, help='same for every target (default: %(default)s)')
     times.add_argument('--target-time-col', help='table column with each target\'s minutes instead')
-    times.add_argument('--priority-col', help='column of priorities, 1 (highest) to 5 (lowest), used when targets '
-                       'compete for time; a column named priority is used automatically ("" ignores it)')
     times.add_argument('--cal-time', type=float, default=5.0, help='calibrations per target (default: %(default)s)')
     times.add_argument('--std-time', type=float, default=10.0, help='standard per target (default: %(default)s)')
     box = make.add_argument_group('RA/Dec box (optional, combines with the night cut)')
@@ -127,7 +125,7 @@ def main(argv: list[str] | None = None) -> None:
             make_targetlist(args.target_list, out_dir=args.out_dir, mag_col=args.mag_col,
                             target_columns=args.columns, std_columns=args.std_columns,
                             target_time=args.target_time, target_time_col=args.target_time_col,
-                            cal_time=args.cal_time, priority_col=args.priority_col,
+                            cal_time=args.cal_time,
                             with_standards=not args.no_standards,
                             standards_file=args.standards_file, std_band=args.std_band, std_spt=args.std_spt,
                             std_time=args.std_time, std_airmass_tol=args.std_airmass_tol,

@@ -11,8 +11,8 @@ from astropy.time import Time
 from . import finder, formats, io, planner, schedule, sky, standards
 
 Log = Callable[[str], None]
-PLAN_COLUMNS = ('shortname', 'status', 'priority', 'target_start', 'target_end', 'mean_airmass', 'standard',
-                'std_start', 'std_airmass', 'std_sep', 'std_note', 'moon_sep', 'ra', 'dec')
+SEQUENCE_COLUMNS = ('step', 'kind', 'shortname', 'status', 'priority', 'start_utc', 'end_utc', 'airmass',
+                    'separation_deg', 'moon_sep', 'note', 'ra', 'dec')
 
 
 class Night(NamedTuple):
@@ -58,14 +58,32 @@ def cut_targets(targets: pd.DataFrame, log: Log, date: str | None = None, site: 
     return targets[keep].reset_index(drop=True), night
 
 
-def with_priority(targets: pd.DataFrame, priority_col: str | None) -> pd.DataFrame:
-    """Take priorities (1 highest .. 5 lowest) from ``priority_col`` into a ``priority`` column (a column already
-    named priority is used without asking; ``''`` ignores priorities) and check them; blanks or other values
-    raise."""
-    if priority_col == '':
-        return targets.drop(columns='priority', errors='ignore')
-    if priority_col is not None:
-        targets = targets.assign(priority=targets[priority_col.lower()])
+def plan_sequence(plan: pd.DataFrame, std_time: float, paired: pd.DataFrame | None = None) -> pd.DataFrame:
+    """The night in observing order: each target, then its standard (when standards are used), with start and
+    end UTC, airmass, the standard's distance from its target and any note. ``paired`` adds standards' RA/Dec."""
+    steps = []
+    for i, row in enumerate(plan.itertuples(index=False)):
+        target = row._asdict()
+        steps.append({'step': len(steps) + 1, 'kind': 'target', 'shortname': target['shortname'],
+                      'status': target['status'], 'priority': target.get('priority'),
+                      'start_utc': target['target_start'], 'end_utc': target['target_end'],
+                      'airmass': target['mean_airmass'], 'moon_sep': target.get('moon_sep'),
+                      'ra': target['ra'], 'dec': target['dec'], 'note': ''})
+        if 'standard' in target:
+            end = (pd.Timestamp(target['std_start']) + pd.Timedelta(minutes=std_time)).strftime('%Y-%m-%d %H:%M')
+            steps.append({'step': len(steps) + 1, 'kind': 'standard', 'shortname': target['standard'],
+                          'status': target['status'], 'start_utc': target['std_start'], 'end_utc': end,
+                          'airmass': target['std_airmass'], 'separation_deg': target['std_sep'],
+                          'note': target['std_note'],
+                          'ra': None if paired is None else paired['ra'].iloc[i],
+                          'dec': None if paired is None else paired['dec'].iloc[i]})
+    seq = pd.DataFrame(steps)
+    return seq[[c for c in SEQUENCE_COLUMNS if c in seq.columns and seq[c].notna().any()]]
+
+
+def with_priority(targets: pd.DataFrame) -> pd.DataFrame:
+    """Check the optional priority column (1 highest .. 5 lowest; see ``io.apply_columns`` for choosing it);
+    blanks or other values raise."""
     if 'priority' not in targets.columns:
         return targets
     values = pd.to_numeric(targets['priority'], errors='coerce')
@@ -90,7 +108,6 @@ def make_targetlist(target_list: str | Path, out_dir: str | Path, mag_col: str |
                     target_columns: dict[str, str | None] | None = None,
                     std_columns: dict[str, str | None] | None = None,
                     target_time: float = 30.0, target_time_col: str | None = None, cal_time: float = 5.0,
-                    priority_col: str | None = None,
                     with_standards: bool = True, standards_file: str | Path | None = None, std_band: str = 'K',
                     std_spt: str | None = None, std_time: float = 10.0, std_airmass_tol: float = 0.1,
                     std_max_sep: float = 20.0, outputs: Iterable[str] | None = None, finders: bool = False,
@@ -108,10 +125,10 @@ def make_targetlist(target_list: str | Path, out_dir: str | Path, mag_col: str |
     progress = progress or (lambda message, done, total: None)
     progress('Planning the night', 0, 0)
     out_dir = Path(out_dir)
-    keep = tuple(c for c in (target_time_col, priority_col) if c)  # '' (ignore priorities) is falsy too
+    keep = (target_time_col,) if target_time_col else ()
     targets = io.read_targets(target_list, mag_col, keep=keep, columns=target_columns)
     mag_col = targets.attrs['mag_col']
-    targets = with_priority(targets, priority_col)
+    targets = with_priority(targets)
     log(f'Read {len(targets)} targets from {target_list} (magnitude column {mag_col})')
     kept, night = cut_targets(targets, log, **cuts)
     stds = (standards.load_standards(mag_col, std_band, std_spt, standards_file, std_columns)
@@ -137,7 +154,7 @@ def make_targetlist(target_list: str | Path, out_dir: str | Path, mag_col: str |
     paths = formats.write(keys, stem, rows, paired, mag_col)
     if night is not None:
         plan_path = stem.with_name(f'{stem.name}_plan.csv')
-        rows[[c for c in PLAN_COLUMNS if c in rows.columns]].round({'ra': 6, 'dec': 6}).to_csv(plan_path, index=False)
+        plan_sequence(rows, std_time, paired).round({'ra': 6, 'dec': 6}).to_csv(plan_path, index=False)
         progress('Drawing visibility plots', 0, 0)
         paths += [plan_path, *schedule.visibility_plots(
             rows, night.date, night.location, night.max_airmass, night.title, stem,

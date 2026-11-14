@@ -32,7 +32,9 @@ def test_gui_plan_prompts_for_folder(qtbot, window, target_csv, tmp_path, monkey
         window.run_button.click()
     assert asked == ['Where should the lists and charts be saved?']
     headers = [window.table.horizontalHeaderItem(j).text() for j in range(window.table.columnCount())]
-    assert {'status', 'target_start', 'standard', 'std_sep'} <= set(headers)
+    assert {'step', 'kind', 'start_utc', 'end_utc', 'airmass', 'separation_deg'} <= set(headers)
+    kinds = [window.table.item(i, headers.index('kind')).text() for i in range(window.table.rowCount())]
+    assert kinds[:2] == ['target', 'standard'] and kinds.count('target') == kinds.count('standard')
     assert (tmp_path / 'targets_irtf.txt').exists() and not (tmp_path / 'targets_list.csv').exists()
     assert len(window.items['visibility']) == window.plots.count() >= 1 and window.plot_view.count() == 1
     assert window.tabs.tabText(1) == f'Visibility ({window.plots.count()})'
@@ -167,13 +169,14 @@ def test_matplotlib_uses_pyside6(tmp_path):
 
 
 def test_priority_column_picked_up(window, target_csv, tmp_path):
-    from targetlist_generator.gui import NO_PRIORITY
+    from targetlist_generator.gui import ColumnMap
     path = tmp_path / 'pri.csv'
-    pd.read_csv(target_csv).assign(priority=2).to_csv(path, index=False)
+    pd.read_csv(target_csv).assign(Prio=2).to_csv(path, index=False)
     window.load_targets(str(path))
-    assert window.priority_col.currentText() == 'priority' and window.kwargs()['priority_col'] == 'priority'
-    window.priority_col.setCurrentText(NO_PRIORITY)
-    assert window.kwargs()['priority_col'] == ''
+    assert window.target_cols.columns()['priority'] == 'prio'  # guessed, and chosen among the other columns
+    window.target_cols.boxes['priority'].setCurrentText(ColumnMap.NONE)
+    assert window.kwargs()['target_columns']['priority'] is None
+    assert 'priority' not in window.std_cols.boxes  # standards have no priority
 
 
 def test_own_standards_in_window(window, tmp_path):
