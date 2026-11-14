@@ -234,3 +234,25 @@ def test_aladin_batch(tmp_path):
     items = [('A', 150.0, 22.0), ('B', 151.0, 23.0)]
     paths, failed = finder.make_finders(items, tmp_path, urls=('http://127.0.0.1:9/none',), log=lambda s: None)
     assert failed == [] and [p.name for p in paths] == ['A_2arcmin.png', 'B_2arcmin.png']
+
+
+def spec_row(name, ra, dec, pmra=0.0, pmdec=0.0, epoch=2000.0, mag=0.0, spt=''):
+    return pd.DataFrame({'shortname': [name], 'ra': [sky.parse_angle(ra, u.hourangle)],
+                         'dec': [sky.parse_angle(dec, u.deg)], 'epoch': [epoch], 'pmra': [pmra], 'pmdec': [pmdec],
+                         'spt': [spt], 'k': [mag]})
+
+
+def test_formats_match_spec_examples(tmp_path):
+    """Lines rebuilt from the examples in each observatory's format documentation."""
+    from targetlist_generator import formats
+    formats.subaru(tmp_path / 's', spec_row('M51', '13:29:55', '+47:18:55'), None, 'k')
+    assert (tmp_path / 's_subaru_ope.txt').read_text() == \
+        'M51=OBJECT="M51" RA=132955.000 DEC=+471855.00 EQUINOX=2000.0\n'
+    formats.eso(tmp_path / 'e', spec_row('Sz100', '16:08:25.8', '-39:06:01', epoch=2013.5), None, 'k')
+    assert (tmp_path / 'e_eso_p2.txt').read_text() == 'Sz100, 16:08:25.800, -39:06:01.00, J2000, 2013.5\n'
+    # MMT example 'FK5-0001 0:08:23.265 +29:05:25.58 +01.039 -016.33 2.06 A0 J2000.0' (pm per century)
+    cos_dec = np.cos(np.radians(sky.parse_angle('+29:05:25.58', u.deg)))
+    row = spec_row('FK5-0001', '0:08:23.265', '+29:05:25.58', pmra=1.039 / 100 * 15 * 1000 * cos_dec,
+                   pmdec=-16.33 / 100 * 1000, mag=2.06, spt='A0')
+    formats.mmt(tmp_path / 'm', row, None, 'k')
+    assert (tmp_path / 'm_mmt.cat').read_text() == 'FK5-0001 00:08:23.265 +29:05:25.58 +1.039 -16.33 2.06 A0 J2000.0\n'

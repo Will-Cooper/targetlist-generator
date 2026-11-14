@@ -25,7 +25,7 @@ def read_table(path: str | Path, mag_col: str = 'tmassk') -> pd.DataFrame:
         df = df.drop(columns='index')
     else:
         df = Table.read(path).to_pandas()
-        for col in df.select_dtypes(object).columns:  # FITS strings arrive as bytes
+        for col in [c for c in df.columns if pd.api.types.is_object_dtype(df[c])]:  # FITS strings arrive as bytes
             df[col] = [v.decode().strip() if isinstance(v, bytes) else v for v in df[col]]
     df = df.rename(columns=str.lower)
     for src, dst in RENAME.items():
