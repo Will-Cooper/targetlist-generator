@@ -42,8 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest='command', required=True)
 
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument('target_list', help='CSV, FITS, ECSV, VOTable or IRTF .txt list; needs columns '
-                                            'shortname (or name), ra, dec, spt and the magnitude column')
+    common.add_argument('target_list', help=f'{io.FILE_TYPES}; needs a name, ra, dec and magnitude column '
+                                            '(guessed from common names; see --columns, --mag-col)')
     common.add_argument('-o', '--out-dir', default='targetlist_out', help='output folder (default: %(default)s)')
     common.add_argument('-m', '--mag-col', help='magnitude column (default: best guess, e.g. tmassk, kmag, k)')
     common.add_argument('--columns', type=columns_arg, help='which column holds each field when the best guess is '
