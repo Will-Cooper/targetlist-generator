@@ -9,6 +9,7 @@ from astropy.time import Time
 from . import sky, standards
 
 WAIT_COST = 0.05  # wait a step rather than observe a target this far (airmass) above its best tonight
+PRIORITY_STEP = 0.1  # airmass one priority level is worth when targets compete (1 = highest, 5 = lowest)
 
 
 def steps(minutes: float) -> int:
@@ -17,10 +18,12 @@ def steps(minutes: float) -> int:
 
 def plan_night(targets: pd.DataFrame, times: Time, location, max_airmass: float, target_min: np.ndarray,
                cal_min: float = 5.0, std_min: float = 10.0, stds: pd.DataFrame | None = None,
-               std_tol: float = 0.1, std_max_sep: float = 20.0) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+               std_tol: float = 0.1, std_max_sep: float = 20.0,
+               priority: np.ndarray | None = None) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     """Schedule targets through the night ``times`` (a regular ``sky.STEP`` grid of dark time).
     From each free grid point, among targets whose whole exposure stays at airmass <= ``max_airmass`` and whose
-    block ends before dawn, take the one closest to its best airmass tonight; wait a step instead when that is
+    block ends before dawn, take the one closest to its best airmass tonight, each ``priority`` level (1 highest,
+    5 lowest) counting as ``PRIORITY_STEP`` airmass; wait a step instead when the choice is
     still more than ``WAIT_COST`` above its best, still rising, and the night has spare time. Each target gets the
     standard chosen by ``standards.pick`` at the time it would be observed. No target is dropped: those that do not
     fit the packed night are kept as 'extra', centred on their best airmass, so the observer can choose on the night.
@@ -28,6 +31,7 @@ def plan_night(targets: pd.DataFrame, times: Time, location, max_airmass: float,
     (one row per plan row), or None without ``stds``."""
     if np.any(~np.isfinite(target_min)) or np.any(target_min <= 0):
         raise ValueError('Target times must be positive numbers of minutes')
+    rank = np.zeros(len(targets)) if priority is None else (np.asarray(priority) - 1) * PRIORITY_STEP
     am = sky.airmass(targets['ra'].to_numpy(), targets['dec'].to_numpy(), times, location)  # (T, N)
     best = am.min(axis=0)
     n_exp = np.array([steps(m) for m in target_min])
@@ -40,7 +44,7 @@ def plan_night(targets: pd.DataFrame, times: Time, location, max_airmass: float,
         if not costs:
             k += 1
             continue
-        pick = min(costs, key=costs.get)
+        pick = min(costs, key=lambda i: costs[i] + rank[i])
         spare = len(times) - k - n_block[list(left)].sum()
         rising = am[k + 1:k + 1 + n_exp[pick], pick].mean() < am[k:k + n_exp[pick], pick].mean()
         if costs[pick] > WAIT_COST and rising and spare > 0:  # waiting improves it and the night has room

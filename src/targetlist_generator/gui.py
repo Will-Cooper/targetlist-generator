@@ -49,7 +49,8 @@ DEFAULT_SITE = 'NASA Infrared Telescope Facility'
 TABLES = 'Tables (*.csv *.fits *.fit *.ecsv *.vot *.xml *.txt);;All files (*)'
 SAMP_TYPES = {'table.load.votable': '.vot', 'table.load.fits': '.fits'}
 COLUMNS_HELP = ('Needs: name (or shortname), ra, dec, spt and a magnitude column. '
-                'Optional: pmra, pmdec (mas/yr), epoch, minutes per target.')
+                'Optional: pmra, pmdec (mas/yr), epoch, minutes per target, priority (1 highest to 5 lowest).')
+NO_PRIORITY = '(none)'
 ERROR = 'color: #B00020'
 
 
@@ -206,11 +207,14 @@ class MainWindow(QMainWindow):
         self.time_same.setChecked(True)
         self.target_time = spin(1, 600, 30, 0, 5)
         self.time_col = QComboBox()
+        self.priority_col = QComboBox()
+        self.priority_col.addItem(NO_PRIORITY)
         self.std_time = spin(0, 120, 10, 0, 5)
         self.cal_time = spin(0, 120, 5, 0, 5)
         times = form(QGroupBox('2. Time per target block'), (
             (self.time_same, self.target_time), (self.time_column, self.time_col),
-            ('Standard [min]', self.std_time), ('Calibrations [min]', self.cal_time)))
+            ('Standard [min]', self.std_time), ('Calibrations [min]', self.cal_time),
+            ('Priority column (1 = highest)', self.priority_col)))
 
         # 3. night
         self.night = QGroupBox('3. Night and observatory', checkable=True)
@@ -290,7 +294,7 @@ class MainWindow(QMainWindow):
         self.progress = QProgressBar(textVisible=False)
         self.progress.setRange(0, 1)
         self.status = QLabel(wordWrap=True)
-        compact(self.mag_col, self.time_col, self.site, self.survey)
+        compact(self.mag_col, self.time_col, self.priority_col, self.site, self.survey)
 
         inputs = QWidget()
         column = QVBoxLayout(inputs)
@@ -366,6 +370,9 @@ class MainWindow(QMainWindow):
         for box in (self.mag_col, self.time_col):
             box.clear()
             box.addItems(numeric)
+        self.priority_col.clear()
+        self.priority_col.addItems([NO_PRIORITY, *numeric])
+        self.priority_col.setCurrentText('priority' if 'priority' in numeric else NO_PRIORITY)
         self.table_df = df
         self.mag_col.setCurrentText('tmassk' if 'tmassk' in df.columns else self.mag_col.itemText(0))
         self.log.appendPlainText(f'{label or path}: {len(df)} rows, columns {list(df.columns)}')
@@ -445,6 +452,7 @@ class MainWindow(QMainWindow):
               'mag_col': self.mag_col.currentText(), 'target_time': self.target_time.value(),
               'target_time_col': self.time_col.currentText() if self.time_column.isChecked() else None,
               'cal_time': self.cal_time.value(), 'std_time': self.std_time.value(),
+              'priority_col': '' if self.priority_col.currentText() == NO_PRIORITY else self.priority_col.currentText(),
               'with_standards': self.stds.isChecked(), 'std_band': self.std_band.currentText(),
               'std_spt': None if self.std_spt.currentText() == 'any' else self.std_spt.currentText(),
               'std_airmass_tol': self.std_tol.value(), 'std_max_sep': self.std_sep.value(), 'outputs': keys,

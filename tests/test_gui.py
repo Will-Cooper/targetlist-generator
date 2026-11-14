@@ -153,3 +153,13 @@ def test_matplotlib_uses_pyside6(tmp_path):
     out = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip().endswith('PySide6')
+
+
+def test_priority_column_picked_up(window, target_csv, tmp_path):
+    from targetlist_generator.gui import NO_PRIORITY
+    path = tmp_path / 'pri.csv'
+    pd.read_csv(target_csv).assign(priority=2).to_csv(path, index=False)
+    window.load_targets(str(path))
+    assert window.priority_col.currentText() == 'priority' and window.kwargs()['priority_col'] == 'priority'
+    window.priority_col.setCurrentText(NO_PRIORITY)
+    assert window.kwargs()['priority_col'] == ''

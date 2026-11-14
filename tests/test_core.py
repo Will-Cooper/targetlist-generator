@@ -275,3 +275,35 @@ def test_default_formats_follow_observatory(target_csv, tmp_path):
     assert formats.defaults('mmt', from_samp=True) == ('mmt',)  # the observatory wins
     cli.main(['make', str(target_csv), '-o', str(tmp_path), '--date', '2026-11-30', '--site', 'keck'])
     assert (tmp_path / 'targets_keck.txt').exists() and not (tmp_path / 'targets_list.csv').exists()
+
+
+def test_priority_wins_when_night_is_full():
+    """Ten identical targets that cannot all fit: every priority-1 target is planned, extras are priority 5."""
+    from targetlist_generator import planner
+    loc = sky.site_location(**IRTF)
+    times = sky.night_times('2026-11-30', loc)
+    lst = times[len(times) // 2].sidereal_time('apparent', longitude=loc.lon).deg
+    targets = pd.DataFrame({'shortname': [f'T{i}' for i in range(10)], 'ra': [lst] * 10, 'dec': [20.0] * 10})
+    priority = np.array([5, 1] * 5)
+    plan, _ = planner.plan_night(targets, times, loc, 2.0, np.full(10, 60.0), 5, 10, priority=priority)
+    status = dict(zip(plan.shortname, plan.status, strict=True))
+    assert 'extra' in status.values()
+    assert all(status[f'T{i}'] == 'planned' for i in range(1, 10, 2))
+    assert {int(n[1:]) % 2 for n, s in status.items() if s == 'extra'} == {0}
+
+
+def test_priority_column(target_csv, tmp_path):
+    from targetlist_generator.pipeline import with_priority
+    df = pd.read_csv(target_csv).assign(priority=1)
+    df.loc[3, 'priority'] = None
+    path = tmp_path / 'p.csv'
+    df.to_csv(path, index=False)
+    with pytest.raises(ValueError, match='Priority must be 1'):
+        make_targetlist(path, tmp_path, log=lambda s: None, date='2026-11-30', **IRTF)
+    targets = io.read_targets(path)
+    assert 'priority' not in with_priority(targets, '').columns  # '' ignores priorities
+    df.loc[3, 'priority'] = 2
+    df.rename(columns={'priority': 'rank'}).to_csv(path, index=False)
+    plan, _ = make_targetlist(path, tmp_path, priority_col='rank', log=lambda s: None, date='2026-11-30', **IRTF)
+    assert set(plan['priority']) <= {1, 2}
+    assert 'priority' in pd.read_csv(tmp_path / 'p_plan.csv').columns

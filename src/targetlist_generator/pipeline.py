@@ -11,8 +11,8 @@ from astropy.time import Time
 from . import finder, formats, io, planner, schedule, sky, standards
 
 Log = Callable[[str], None]
-PLAN_COLUMNS = ('shortname', 'status', 'target_start', 'target_end', 'mean_airmass', 'standard', 'std_start',
-                'std_airmass', 'std_sep', 'std_note', 'moon_sep', 'ra', 'dec')
+PLAN_COLUMNS = ('shortname', 'status', 'priority', 'target_start', 'target_end', 'mean_airmass', 'standard',
+                'std_start', 'std_airmass', 'std_sep', 'std_note', 'moon_sep', 'ra', 'dec')
 
 
 class Night(NamedTuple):
@@ -58,6 +58,23 @@ def cut_targets(targets: pd.DataFrame, log: Log, date: str | None = None, site: 
     return targets[keep].reset_index(drop=True), night
 
 
+def with_priority(targets: pd.DataFrame, priority_col: str | None) -> pd.DataFrame:
+    """Take priorities (1 highest .. 5 lowest) from ``priority_col`` into a ``priority`` column (a column already
+    named priority is used without asking; ``''`` ignores priorities) and check them; blanks or other values
+    raise."""
+    if priority_col == '':
+        return targets.drop(columns='priority', errors='ignore')
+    if priority_col is not None:
+        targets = targets.assign(priority=targets[priority_col.lower()])
+    if 'priority' not in targets.columns:
+        return targets
+    values = pd.to_numeric(targets['priority'], errors='coerce')
+    bad = targets['shortname'][~values.isin([1, 2, 3, 4, 5])].tolist()
+    if bad:
+        raise ValueError(f'Priority must be 1 (highest) to 5 (lowest); fix it for {bad}')
+    return targets.assign(priority=values.astype(int))
+
+
 def target_minutes(targets: pd.DataFrame, target_time: float, target_time_col: str | None) -> np.ndarray:
     """Observing time per target [min]: the ``target_time_col`` column when given, else ``target_time``."""
     if target_time_col is None:
@@ -71,6 +88,7 @@ def target_minutes(targets: pd.DataFrame, target_time: float, target_time_col: s
 
 def make_targetlist(target_list: str | Path, out_dir: str | Path, mag_col: str = 'tmassk',
                     target_time: float = 30.0, target_time_col: str | None = None, cal_time: float = 5.0,
+                    priority_col: str | None = None,
                     with_standards: bool = True, standards_file: str | Path | None = None, std_band: str = 'K',
                     std_spt: str | None = None, std_time: float = 10.0, std_airmass_tol: float = 0.1,
                     std_max_sep: float = 20.0, outputs: Iterable[str] | None = None, finders: bool = False,
@@ -88,7 +106,8 @@ def make_targetlist(target_list: str | Path, out_dir: str | Path, mag_col: str =
     progress('Planning the night', 0, 0)
     out_dir = Path(out_dir)
     mag_col = mag_col.lower()
-    targets = io.read_targets(target_list, mag_col, keep=(target_time_col,) if target_time_col else ())
+    keep = tuple(c for c in (target_time_col, priority_col) if c)  # '' (ignore priorities) is falsy too
+    targets = with_priority(io.read_targets(target_list, mag_col, keep=keep), priority_col)
     log(f'Read {len(targets)} targets from {target_list}')
     kept, night = cut_targets(targets, log, **cuts)
     stds = standards.load_standards(mag_col, std_band, std_spt, standards_file) if with_standards else None
@@ -100,7 +119,8 @@ def make_targetlist(target_list: str | Path, out_dir: str | Path, mag_col: str =
     else:
         minutes = target_minutes(kept, target_time, target_time_col)
         rows, paired = planner.plan_night(kept, night.times, night.location, night.max_airmass, minutes, cal_time,
-                                          std_time if stds is not None else 0.0, stds, std_airmass_tol, std_max_sep)
+                                          std_time if stds is not None else 0.0, stds, std_airmass_tol, std_max_sep,
+                                          kept['priority'].to_numpy() if 'priority' in kept.columns else None)
         extra = int((rows['status'] == 'extra').sum())
         log(f'Planned {len(rows) - extra} blocks back to back' + (f'; {extra} more did not fit and are '
                                                                   'listed at their best time' if extra else ''))

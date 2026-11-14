@@ -56,7 +56,7 @@ Both install in editable mode, so `git pull` updates the tool.
 ## Using the window
 Work down the left-hand side:
 1. **Target table**: browse to a file, or tick *Listen for TOPCAT (SAMP)* and use TOPCAT's *Interop → Send table to → Target List Generator* (a SAMP hub is started if none is running). The window checks the table has the columns it needs before you can plan.
-2. **Time per target block**: the same observing time for every target (default 30 min) or a column of minutes from the table, plus the time for each standard (default 10 min) and for calibrations (default 5 min).
+2. **Time per target block**: the same observing time for every target (default 30 min) or a column of minutes from the table, plus the time for each standard (default 10 min) and for calibrations (default 5 min), and optionally a priority column (picked automatically when the table has one called `priority`).
 3. **Night and observatory**: pick the evening from the calendar and type part of an observatory's name or alias (e.g. *irtf*, *keck*, *palma*) or enter latitude/longitude; set the airmass limit and the Moon filter (automatic by default: 10 deg from a new Moon up to 40 deg from a full one).
 4. **Telluric standards**: on or off, band, spectral type, airmass tolerance and maximum distance on the sky.
 5. Optionally an **RA/Dec box**.
@@ -67,7 +67,7 @@ The *Plan* tab shows the night: each target's block, its standard and how far th
 The *Visibility* tab shows ING-style plots of every target's altitude through the night, with the planned blocks drawn thick, and the *Finder charts* tab each chart as it is made; both can be zoomed, panned and saved with the toolbar above them.
 
 ## Try it
-`examples/example_targets.csv` holds 40 made-up targets (synthetic positions, not real objects) spread around the sky, with sexagesimal coordinates, string and numeric spectral types, proper motions and an `exptime` column of minutes.
+`examples/example_targets.csv` holds 40 made-up targets (synthetic positions, not real objects) spread around the sky, with sexagesimal coordinates, string and numeric spectral types, proper motions, an `exptime` column of minutes and a `priority` column.
 Open it in the window (or send it from TOPCAT) and try, for example:
 - the date picker and different observatories (*irtf*, *paranal*, *lapalma*) to see which targets survive and how the plan changes;
 - *From column* → `exptime` instead of the same time for every target, or longer standard and calibration times, until the night overflows and some targets become `extra`;
@@ -92,11 +92,13 @@ CSV, FITS, ECSV, VOTable, or a previous IRTF `.txt` output.
 Column names are case-insensitive; required are `shortname` (or `name`), `ra`, `dec`, `spt` and a magnitude column (`--mag-col`, default `tmassk`).
 RA and Dec can be decimal degrees or sexagesimal strings (`10:23:00`, `10h23m00s`); spectral types can be strings or numbers (M0 = 60, L0 = 70, T0 = 80, Y0 = 90).
 `epoch`, `pmra` and `pmdec` are used when present (defaults 2000, 0, 0); proper motions are mas/yr with `pmra` including cos(Dec), as in Gaia.
+An optional `priority` column (1 = highest to 5 = lowest; another column with `--priority-col`) is used when targets compete for time; every target needs a value.
 
 ### Planning the night
 With `--date` and an observatory (`--site`, or `--lat/--lon`), the night runs while the Sun is below `--twilight` (default −12 deg) and targets are kept if they spend at least `--min-time` minutes (default 30) at airmass ≤ `--max-airmass` (default 2) and are far enough from the Moon (`--min-moon-sep auto|off|<deg>`).
 Each target then gets a block: its observing time (`--target-time`, or `--target-time-col`), calibrations (`--cal-time`) and its standard (`--std-time`).
 Blocks are laid back to back through the night, each time taking the target closest to its best airmass of the night, so the list comes out in time (and so roughly RA) order.
+With priorities, each level counts as 0.1 airmass when targets compete: a priority-1 target is taken before a priority-3 one unless it is more than 0.2 above its best airmass, and on a full night lower priorities become the extras.
 No visible target is dropped: when the night is too full, the targets that do not fit are listed as `extra` at their best time, for you to choose between on the night.
 Observatories come from a bundled copy of astropy's site registry (no internet needed); `targetlist sites <search>` lists them.
 

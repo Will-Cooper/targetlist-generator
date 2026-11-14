@@ -72,6 +72,8 @@ def normalise(df: pd.DataFrame, mag_col: str, source: str = 'table', keep: tuple
     df['spt'] = [spt_from_num(n) if np.isfinite(n) else ('' if pd.isna(s) else str(s).strip())
                  for n, s in zip(sptnum, df['spt'], strict=True)]
     columns = ['shortname', 'ra', 'dec', 'epoch', 'pmra', 'pmdec', 'spt', mag_col]
+    if 'priority' in df.columns:  # optional: 1 (highest) to 5 (lowest), used by the planner
+        columns.append('priority')
     return df[columns + [c for c in keep if c not in columns]].reset_index(drop=True)
 
 
