@@ -121,4 +121,7 @@ ruff check src tests
 Version 1 (the single `targetlist_gen.py` script driving Aladin) is tagged `v1.0.4`.
 
 ## Citing
-[![DOI](https://zenodo.org/badge/323075587.svg)](https://zenodo.org/badge/latestdoi/323075587)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6624861.svg)](https://doi.org/10.5281/zenodo.6624861)
+
+The DOI above always points to the latest version; each release also has its own version DOI on Zenodo, which is best for citing the exact version you used.
+Citation details are in `CITATION.cff`.
