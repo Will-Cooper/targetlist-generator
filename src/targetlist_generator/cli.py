@@ -17,6 +17,14 @@ EPILOG = """examples:
 Negative values work as plain numbers (-d -30 60); for negative sexagesimal strings use degrees instead."""
 
 
+def columns_arg(value: str) -> dict[str, str | None]:
+    """'name=designation,ra=RAJ2000,spt=' -> {field: column}; an empty column ignores that field."""
+    pairs = [item.split('=', 1) for item in value.split(',') if item.strip()]
+    if any(len(p) != 2 for p in pairs):
+        raise argparse.ArgumentTypeError(f'expected field=column pairs, e.g. name=designation,ra=RAJ2000; got {value}')
+    return {f.strip().lower(): (c.strip() or None) for f, c in pairs}
+
+
 def formats_arg(value: str) -> list[str] | None:
     if value == 'auto':
         return None
@@ -37,7 +45,10 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument('target_list', help='CSV, FITS, ECSV, VOTable or IRTF .txt list; needs columns '
                                             'shortname (or name), ra, dec, spt and the magnitude column')
     common.add_argument('-o', '--out-dir', default='targetlist_out', help='output folder (default: %(default)s)')
-    common.add_argument('-m', '--mag-col', default='tmassk', help='magnitude column (default: %(default)s)')
+    common.add_argument('-m', '--mag-col', help='magnitude column (default: best guess, e.g. tmassk, kmag, k)')
+    common.add_argument('--columns', type=columns_arg, help='which column holds each field when the best guess is '
+                        'wrong: name=,ra=,dec=,spt=,pmra=,pmdec=,epoch= (e.g. name=designation,ra=RAJ2000; '
+                        'an empty value ignores a field)')
     common.add_argument('--survey', default=finder.SURVEYS[0], help='HiPS survey for finder charts, e.g. '
                         + ', '.join(finder.SURVEYS[:3]) + ' (default: %(default)s)')
     common.add_argument('--hips2fits-url', action='append', default=[],
@@ -73,6 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     std.add_argument('--no-standards', action='store_true', help='skip pairing standards')
     std.add_argument('--standards-file', help='your own standards (CSV, FITS, VOTable, ...): name or shortname, ra, '
                      'dec and a magnitude column; spt and proper motions optional')
+    std.add_argument('--std-columns', type=columns_arg, help='as --columns, for --standards-file')
     std.add_argument('--std-band', default='K', help='magnitude column of the standards (bundled list: '
                      + ', '.join(standards.BANDS) + '; default: %(default)s)')
     std.add_argument('--std-spt', help='only standards of this type, e.g. A0V (default: B9V-A1V)')
@@ -113,6 +125,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         if args.command == 'make':
             make_targetlist(args.target_list, out_dir=args.out_dir, mag_col=args.mag_col,
+                            target_columns=args.columns, std_columns=args.std_columns,
                             target_time=args.target_time, target_time_col=args.target_time_col,
                             cal_time=args.cal_time, priority_col=args.priority_col,
                             with_standards=not args.no_standards,
@@ -124,7 +137,7 @@ def main(argv: list[str] | None = None) -> None:
                             min_time=args.min_time, min_moon_sep=args.min_moon_sep,
                             ra_range=args.ra_range, dec_range=args.dec_range)
         else:
-            targets = io.read_targets(args.target_list, args.mag_col)
+            targets = io.read_targets(args.target_list, args.mag_col, columns=args.columns)
             names = targets['shortname'] if args.names == ['all'] else args.names
             make_finders(targets, names, args.out_dir, args.survey, args.fov, urls)
     except (ValueError, FileNotFoundError, RuntimeError) as err:  # user-facing problems: message, no traceback

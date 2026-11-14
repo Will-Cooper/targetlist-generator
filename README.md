@@ -111,7 +111,7 @@ Choose the magnitude band with `--std-band` (bundled list: B, V, G, J, H or K) a
 To use your own standards instead, give `--standards-file` (or *Your own list* in the window's standards section): any table the tool reads (CSV, FITS, VOTable, ...) with `name` (or `shortname`), `ra`, `dec` (degrees or sexagesimal) and a magnitude column, named with `--std-band`; spectral types (`spt`) and proper motions (`pmra`, `pmdec`) are used when present.
 
 ### Output (in `--out-dir`, default `targetlist_out/`)
-With a night, always `<name>_plan.csv` (status, target and standard times, airmasses, standard distance, Moon separation) and `<name>_visibility_N.png` (ten targets per plot).
+With a night, always `<name>_plan.csv` (status, target and standard times, airmasses, standard distance, Moon separation) and `visibility/<name>_NN_UThhmm-hhmm.png` (ten targets per plot, numbered in plan order and named by the UT span of their blocks).
 Plus the formats chosen with `--formats`, each listing every target followed by its standard.
 The default, `auto`, writes the chosen observatory's own format (IRTF → `irtf`, Keck → `keck`, Lick → `lick`, Paranal and La Silla → `eso`, Subaru → `subaru`, MMT → `mmt`, Las Campanas → `magellan`, La Palma → `cat`), and CSV otherwise:
 

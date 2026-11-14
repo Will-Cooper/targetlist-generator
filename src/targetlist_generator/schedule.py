@@ -50,7 +50,8 @@ STYLES = ('-', '--', '-.', ':')
 
 def visibility_plots(plan: pd.DataFrame, date: str, location, max_airmass: float, title: str,
                      stem: Path, show=None) -> list[Path]:
-    """ING-style visibility plots, ``PER_PLOT`` targets each (``<stem>_visibility_N.png``): altitude against UTC
+    """ING-style visibility plots, ``PER_PLOT`` targets each, in plan order, saved in a ``visibility`` folder next to
+    ``stem`` as ``<stem>_NN_UThhmm-hhmm.png`` (number, then the UT span of their blocks): altitude against UTC
     from sunset to sunrise with an airmass axis, twilight shading (darker grey = brighter sky), the Moon (grey
     dotted) and each target's planned block drawn thick. ``show(name, figure)`` gets each figure too."""
     grid, sun = sky.day_grid(date, location)
@@ -64,6 +65,9 @@ def visibility_plots(plan: pd.DataFrame, date: str, location, max_airmass: float
     alt_all = sky.altitude(plan['ra'].to_numpy(), plan['dec'].to_numpy(), times, location)
     limit_alt = np.degrees(np.arcsin(1 / max_airmass))
     paths = []
+    folder = stem.parent / 'visibility'
+    folder.mkdir(exist_ok=True)
+    pages = -(-len(plan) // PER_PLOT)
     for k, start in enumerate(range(0, len(plan), PER_PLOT), 1):
         chunk = plan.iloc[start:start + PER_PLOT]
         with rc_context({'font.family': 'serif'}):
@@ -96,9 +100,11 @@ def visibility_plots(plan: pd.DataFrame, date: str, location, max_airmass: float
             right.set_ylabel('Airmass')
             ax.set_xlabel(f'UTC from {times[0].iso[:10]} [h]')
             ax.set_ylabel('Altitude [deg]')
-            ax.set_title(f'{title}\nnight of {date}' + (f' ({k})' if len(plan) > PER_PLOT else ''))
+            ax.set_title(f'{title}\nnight of {date}' + (f' ({k} of {pages})' if pages > 1 else ''))
             ax.legend(loc='upper right', fontsize=7, frameon=False)
-            path = stem.with_name(f'{stem.name}_visibility_{k}.png')
+            span = f"UT{chunk['target_start'].min()[11:16].replace(':', '')}-" \
+                   f"{chunk['target_end'].max()[11:16].replace(':', '')}"
+            path = folder / f'{stem.name}_{k:0{len(str(pages))}d}_{span}.png'
             fig.savefig(path, dpi=150, bbox_inches='tight')
         paths.append(path)
         if show is not None:

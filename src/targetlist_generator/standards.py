@@ -8,18 +8,20 @@ import pandas as pd
 from astropy.coordinates import SkyCoord
 
 from . import sky
-from .io import normalise, read_table
+from .io import apply_columns, normalise, read_table
 
 BUNDLED = files(__package__) / 'data' / 'large_standards_bright.csv'  # B9V-A1V, K = 5-9 mag, 4969 stars
 BANDS = ('B', 'V', 'G', 'J', 'H', 'K')  # magnitude columns of the bundled list
 
 
-def load_standards(mag_col: str, band: str = 'K', spt: str | None = None, path: str | Path | None = None):
+def load_standards(mag_col: str, band: str = 'K', spt: str | None = None, path: str | Path | None = None,
+                   columns: dict[str, str | None] | None = None):
     """Standards from the bundled B9V-A1V list or your own table (any format ``read_table`` understands: needs name
     or shortname, ra, dec and the magnitude column ``band``; spt and proper motions optional). ``band`` is renamed
-    to ``mag_col`` so the standards sit in the target list; ``spt`` keeps only that spectral type."""
+    to ``mag_col`` so the standards sit in the target list; ``spt`` keeps only that spectral type; ``columns``
+    overrides the best-guess columns as in ``io.apply_columns``."""
     source = Path(path) if path else Path(str(BUNDLED))
-    raw = read_table(source, mag_col)
+    raw = apply_columns(read_table(source), columns)
     band, mag_col = band.lower(), mag_col.lower()
     if band not in raw.columns:
         numeric = list(raw.select_dtypes('number').columns.drop(['ra', 'dec'], errors='ignore'))

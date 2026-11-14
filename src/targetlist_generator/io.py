@@ -1,4 +1,4 @@
-"""Read target tables (CSV, FITS, ECSV, VOTable, IRTF lists) into one standard set of columns."""
+"""Read target tables (CSV, TSV, text, FITS, VOTable, ECSV, IRTF lists) into one standard set of columns."""
 from pathlib import Path
 
 import astropy.units as u
@@ -7,31 +7,83 @@ import pandas as pd
 from astropy.coordinates import Angle, SkyCoord
 from astropy.table import Table
 
-REQUIRED = ('shortname', 'ra', 'dec', 'spt')
-RENAME = {'name': 'shortname', 'median_sptname': 'spt', 'gaiag_spt': 'spt'}  # first match wins
+REQUIRED = ('shortname', 'ra', 'dec')
 TXT_NAMES = ['index', 'shortname', 'ra', 'dec', 'epoch', 'pmra', 'pmdec', 'spt']  # IRTF list columns, mag appended
+IRTF_RULE = '#+-----'
+TEXT_SUFFIXES = ('.txt', '.dat', '.tbl', '.ascii', '.text')
+FILE_TYPES = ('CSV, TSV, text tables (whitespace or IPAC .tbl, header line optional), FITS (also gzipped), '
+              'VOTable (.vot/.xml), ECSV, and this tool\'s own IRTF lists')
+# Standard column -> names recognised for it (lower case, first match wins); the user can always choose others.
+ALIASES = {
+    'shortname': ('shortname', 'name', 'designation', 'object', 'target', 'main_id', 'id', 'source_id', 'star'),
+    'ra': ('ra', 'raj2000', '_raj2000', 'ra_icrs', 'ra_deg', 'radeg', 'ra2000', 'ra_j2000', 'alpha'),
+    'dec': ('dec', 'dej2000', '_dej2000', 'de_icrs', 'dec_deg', 'decdeg', 'decj2000', 'dec_j2000', 'de', 'delta'),
+    'spt': ('spt', 'sptype', 'sp_type', 'spectral_type', 'spectype', 'median_sptname', 'gaiag_spt', 'spt_opt',
+            'spt_ir'),
+    'pmra': ('pmra', 'pm_ra', 'pmra_cosdec', 'pmracosdec'),
+    'pmdec': ('pmdec', 'pm_dec', 'pmde'),
+    'epoch': ('epoch', 'ref_epoch'),
+}
+MAGNITUDES = ('tmassk', 'kmag', 'ks', 'ksmag', 'k', 'k_mag', 'hmag', 'h', 'jmag', 'j', 'phot_g_mean_mag', 'gmag',
+              'g', 'vmag', 'v')
 
 
-def read_table(path: str | Path, mag_col: str = 'tmassk') -> pd.DataFrame:
-    """Read a CSV, IRTF ``.txt`` list or astropy-readable table (FITS, ECSV, VOTable); lower-case names."""
+def read_table(path: str | Path) -> pd.DataFrame:
+    """Read any table in ``FILE_TYPES`` with lower-case column names, unchanged otherwise."""
     path = Path(path)
     if not path.is_file():
-        raise FileNotFoundError(f'Cannot find target list {path}')
+        raise FileNotFoundError(f'Cannot find table {path}')
     suffix = path.suffix.lower()
     if suffix == '.csv':
         df = pd.read_csv(path)
-    elif suffix in ('.txt', '.tsv'):  # our own IRTF output, so lists can be re-cut
-        df = pd.read_csv(path, sep='\t', comment='#', header=None, names=TXT_NAMES + [mag_col.lower()])
-        df = df.drop(columns='index')
+    elif suffix == '.tsv':
+        df = pd.read_csv(path, sep='\t')
+    elif suffix in TEXT_SUFFIXES and path.read_text(errors='replace').startswith(IRTF_RULE):  # an IRTF list
+        mag = path.read_text().splitlines()[1].split('|')[-2].strip().lower()
+        df = pd.read_csv(path, sep='\t', comment='#', header=None, names=TXT_NAMES + [mag]).drop(columns='index')
     else:
-        df = Table.read(path).to_pandas()
+        df = Table.read(path, format='ascii') if suffix in TEXT_SUFFIXES else Table.read(path)
+        df = df.to_pandas()
         for col in [c for c in df.columns if pd.api.types.is_object_dtype(df[c])]:  # FITS strings arrive as bytes
             df[col] = [v.decode().strip() if isinstance(v, bytes) else v for v in df[col]]
-    df = df.rename(columns=str.lower)
-    for src, dst in RENAME.items():
-        if src in df.columns and dst not in df.columns:
-            df = df.rename(columns={src: dst})
+    df = df.rename(columns=lambda c: str(c).strip().lower())
+    clash = df.columns[df.columns.duplicated()].tolist()
+    if clash:
+        raise ValueError(f'{path.name} has columns that differ only in case: {clash}')
     return df
+
+
+def guess_columns(columns) -> dict[str, str | None]:
+    """Best guess at which column holds each standard field (``ALIASES``), or None."""
+    names = list(columns)
+    return {field: next((n for n in aliases if n in names), None) for field, aliases in ALIASES.items()}
+
+
+def magnitude_column(columns, mag_col: str | None = None) -> str:
+    """The chosen magnitude column, else the first of ``MAGNITUDES`` present."""
+    if mag_col:
+        return mag_col.lower()
+    guess = next((n for n in MAGNITUDES if n in list(columns)), None)
+    if guess is None:
+        raise ValueError(f'No magnitude column recognised: choose one (--mag-col, or in the window) '
+                         f'from {list(columns)}')
+    return guess
+
+
+def apply_columns(df: pd.DataFrame, columns: dict[str, str | None] | None = None) -> pd.DataFrame:
+    """Rename the columns holding each standard field to its standard name: the best guess, overridden by
+    ``columns`` ({field: column}, with 'name' accepted for 'shortname' and None to ignore a field)."""
+    choice = guess_columns(df.columns)
+    for field, col in (columns or {}).items():
+        field = 'shortname' if field == 'name' else field
+        if field not in ALIASES:
+            raise ValueError(f'Unknown field {field!r}; choose from {["name", *list(ALIASES)[1:]]}')
+        if col and col.lower() not in df.columns:
+            raise ValueError(f'No column {col!r} for {field}; columns are {list(df.columns)}')
+        choice[field] = col.lower() if col else None
+    used = {c for c in choice.values() if c}
+    df = df.drop(columns=[f for f, c in choice.items() if f in df.columns and c != f and f not in used])
+    return df.rename(columns={c: f for f, c in choice.items() if c and c != f})
 
 
 def spt_from_num(num: float) -> str:
@@ -42,10 +94,17 @@ def spt_from_num(num: float) -> str:
     return f"{'MLTY'[int(half // 10) - 6]}{half % 10:g}"
 
 
-def read_targets(path: str | Path, mag_col: str = 'tmassk', keep: tuple[str, ...] = ()) -> pd.DataFrame:
+def read_targets(path: str | Path, mag_col: str | None = None, keep: tuple[str, ...] = (),
+                 columns: dict[str, str | None] | None = None) -> pd.DataFrame:
     """Read a target list into columns shortname, ra, dec (deg), epoch, pmra, pmdec (mas/yr, pmra including
-    cos dec as in Gaia), spt, ``mag_col`` and any ``keep`` columns."""
-    return normalise(read_table(path, mag_col), mag_col, source=str(path), keep=keep)
+    cos dec as in Gaia), spt, the magnitude column and any ``keep`` columns. Fields come from the best-guess
+    columns unless ``columns`` says otherwise (see ``apply_columns``); the magnitude column (guessed when
+    ``mag_col`` is None) is named in ``df.attrs['mag_col']``."""
+    raw = read_table(path)
+    mag_col = magnitude_column(raw.columns, mag_col)
+    df = normalise(apply_columns(raw, columns), mag_col, source=str(path), keep=keep)
+    df.attrs['mag_col'] = mag_col
+    return df
 
 
 def normalise(df: pd.DataFrame, mag_col: str, source: str = 'table', keep: tuple[str, ...] = ()) -> pd.DataFrame:
@@ -55,8 +114,8 @@ def normalise(df: pd.DataFrame, mag_col: str, source: str = 'table', keep: tuple
     keep = tuple(c.lower() for c in keep)
     missing = [c for c in (*REQUIRED, mag_col, *keep) if c not in df.columns]
     if missing:
-        raise ValueError(f'{source} is missing columns {missing} (case-insensitive; "name" also accepted for '
-                         f'"shortname"); it has {list(df.columns)}')
+        raise ValueError(f'{source} has no column for {missing}: choose the right columns, or add them; it has '
+                         f'{list(df.columns)}')
     df['shortname'] = df['shortname'].astype(str).str.strip().str.replace(r'\s+', '_', regex=True)  # split on spaces
     for col, unit in (('ra', u.hourangle), ('dec', u.deg)):  # numbers are degrees; sexagesimal strings in unit
         deg = pd.to_numeric(df[col], errors='coerce')
@@ -68,6 +127,8 @@ def normalise(df: pd.DataFrame, mag_col: str, source: str = 'table', keep: tuple
         df[col] = deg
     for col, default in (('epoch', 2000.0), ('pmra', 0.0), ('pmdec', 0.0)):
         df[col] = pd.to_numeric(df[col]).fillna(default) if col in df.columns else default
+    if 'spt' not in df.columns:  # optional: written into the lists when known
+        df['spt'] = ''
     sptnum = pd.to_numeric(df['spt'], errors='coerce')  # numeric types (L0 = 70) may be mixed with strings
     df['spt'] = [spt_from_num(n) if np.isfinite(n) else ('' if pd.isna(s) else str(s).strip())
                  for n, s in zip(sptnum, df['spt'], strict=True)]

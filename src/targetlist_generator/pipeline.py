@@ -86,7 +86,9 @@ def target_minutes(targets: pd.DataFrame, target_time: float, target_time_col: s
     return minutes
 
 
-def make_targetlist(target_list: str | Path, out_dir: str | Path, mag_col: str = 'tmassk',
+def make_targetlist(target_list: str | Path, out_dir: str | Path, mag_col: str | None = None,
+                    target_columns: dict[str, str | None] | None = None,
+                    std_columns: dict[str, str | None] | None = None,
                     target_time: float = 30.0, target_time_col: str | None = None, cal_time: float = 5.0,
                     priority_col: str | None = None,
                     with_standards: bool = True, standards_file: str | Path | None = None, std_band: str = 'K',
@@ -95,9 +97,10 @@ def make_targetlist(target_list: str | Path, out_dir: str | Path, mag_col: str =
                     survey: str = finder.SURVEYS[0], fov: float = 2.0, urls: tuple[str, ...] = finder.HIPS2FITS,
                     log: Log = print, show=None, progress=None, **cuts) -> tuple[pd.DataFrame, list[Path]]:
     """Cut ``target_list`` (``cuts`` go to ``cut_targets``), plan the night when a date is given, pair standards
+    (columns: best guesses unless ``target_columns``/``std_columns`` or ``mag_col`` say otherwise)
     and write into ``out_dir``: the chosen ``outputs`` (see ``formats.FORMATS``; None = ``formats.defaults`` for the
     site), with a night also
-    ``<stem>_plan.csv`` and ``<stem>_visibility_N.png``, and optionally ``fcharts/*.png``.
+    ``<stem>_plan.csv`` and ``visibility/<stem>_NN_UThhmm-hhmm.png``, and optionally ``fcharts/*.png``.
     ``show(kind, name, item)`` receives each visibility figure (kind "visibility") and finder chart (kind
     "finder": a Figure, or a PNG path when drawn by Aladin) as it is made; ``progress(message, done, total)``
     reports the current stage (total 0 while busy). Returns the plan (or the kept targets without a night)
@@ -105,12 +108,14 @@ def make_targetlist(target_list: str | Path, out_dir: str | Path, mag_col: str =
     progress = progress or (lambda message, done, total: None)
     progress('Planning the night', 0, 0)
     out_dir = Path(out_dir)
-    mag_col = mag_col.lower()
     keep = tuple(c for c in (target_time_col, priority_col) if c)  # '' (ignore priorities) is falsy too
-    targets = with_priority(io.read_targets(target_list, mag_col, keep=keep), priority_col)
-    log(f'Read {len(targets)} targets from {target_list}')
+    targets = io.read_targets(target_list, mag_col, keep=keep, columns=target_columns)
+    mag_col = targets.attrs['mag_col']
+    targets = with_priority(targets, priority_col)
+    log(f'Read {len(targets)} targets from {target_list} (magnitude column {mag_col})')
     kept, night = cut_targets(targets, log, **cuts)
-    stds = standards.load_standards(mag_col, std_band, std_spt, standards_file) if with_standards else None
+    stds = (standards.load_standards(mag_col, std_band, std_spt, standards_file, std_columns)
+            if with_standards else None)
     if night is None:
         rows, paired = kept, None
         if stds is not None:

@@ -29,8 +29,40 @@ def test_read_targets_mixed_formats(target_csv):
 def test_read_targets_missing_columns(tmp_path):
     path = tmp_path / 'bad.csv'
     pd.DataFrame({'name': ['a'], 'ra': [1.0], 'dec': [1.0]}).to_csv(path, index=False)
-    with pytest.raises(ValueError, match=r"\['spt', 'tmassk'\]"):
+    with pytest.raises(ValueError, match='No magnitude column recognised'):
         io.read_targets(path)
+    with pytest.raises(ValueError, match=r"no column for \['tmassk'\]"):
+        io.read_targets(path, 'tmassk')
+    pd.DataFrame({'name': ['a'], 'x': [1.0], 'dec': [1.0], 'k': [9.0]}).to_csv(path, index=False)
+    with pytest.raises(ValueError, match=r"no column for \['ra'\]"):
+        io.read_targets(path)
+
+
+def test_column_guesses_and_choices(tmp_path):
+    """VizieR-style names are recognised; the user's choices override the guesses; spt is optional."""
+    path = tmp_path / 'vizier.vot'
+    Table({'Designation': ['A b', 'C'], 'RAJ2000': [10.0, 20.0], 'DEJ2000': [5.0, -5.0], 'Kmag': [12.0, 13.0],
+           'SpT': ['L1', 'T2'], 'other': [1.0, 2.0]}).write(path, format='votable')
+    df = io.read_targets(path)
+    assert df.attrs['mag_col'] == 'kmag' and list(df['shortname']) == ['A_b', 'C'] and list(df['spt']) == ['L1', 'T2']
+    df = io.read_targets(path, 'other', columns={'name': 'SpT', 'spt': None})
+    assert list(df['shortname']) == ['L1', 'T2'] and list(df['spt']) == ['', ''] and df.attrs['mag_col'] == 'other'
+    with pytest.raises(ValueError, match="No column 'nope' for ra"):
+        io.read_targets(path, columns={'ra': 'nope'})
+
+
+def test_text_and_tsv_tables(tmp_path):
+    """Whitespace text tables (header line, IPAC) and TSV are read, and our own IRTF lists still are."""
+    text = tmp_path / 'list.txt'
+    text.write_text('# name ra dec kmag\nA 10.0 5.0 12.0\nB 20.0 -5.0 13.0\n')
+    assert list(io.read_targets(text)['shortname']) == ['A', 'B']
+    tsv = tmp_path / 'list.tsv'
+    pd.DataFrame({'name': ['A'], 'ra': ['00:40:00'], 'dec': ['+05:00:00'], 'kmag': [12.0]}).to_csv(tsv, sep='\t',
+                                                                                                     index=False)
+    assert io.read_targets(tsv)['ra'].iloc[0] == pytest.approx(10.0)
+    ipac = tmp_path / 'list.tbl'
+    Table({'name': ['A'], 'ra': [10.0], 'dec': [5.0], 'k': [12.0]}).write(ipac, format='ascii.ipac')
+    assert io.read_targets(ipac).attrs['mag_col'] == 'k'
 
 
 def test_formatted_sign_and_wrap():
@@ -191,7 +223,9 @@ def test_target_time_column_and_plan_files(target_csv, tmp_path):
                                   date='2026-11-30', **IRTF)
     starts, ends = pd.to_datetime(plan.target_start), pd.to_datetime(plan.target_end)
     assert ((ends - starts) == pd.Timedelta(minutes=20)).all()
-    assert (tmp_path / 'timed_plan.csv').exists() and (tmp_path / 'timed_visibility_1.png').stat().st_size > 30_000
+    assert (tmp_path / 'timed_plan.csv').exists()
+    plots = sorted((tmp_path / 'visibility').glob('timed_*_UT*.png'))
+    assert plots and plots[0].name.startswith('timed_1_UT') and plots[0].stat().st_size > 30_000
 
 
 def test_every_format(target_csv, tmp_path):
