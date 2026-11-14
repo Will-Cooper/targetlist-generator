@@ -1,4 +1,4 @@
-"""Telluric standards: load the bundled (or a user) list and pair each target with its nearest standard."""
+"""Telluric standards: load the bundled (or a user) list and pick one near each target on the sky and in airmass."""
 from importlib.resources import files
 from pathlib import Path
 

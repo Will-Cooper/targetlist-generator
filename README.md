@@ -1,6 +1,8 @@
 # Targetlist Generator
 
-Cut a target list down to what is observable on a given night, pair each target with a nearby telluric standard, and write the lists telescopes expect (IRTF starcat, ING object-visibility `.cat`) plus finder charts.
+Plan an observing night from a target table.
+Give it your targets (a file, or sent from TOPCAT), the date and the observatory, and it keeps what is visible, lays the targets through the night in blocks at low airmass, pairs each with a nearby telluric standard, and draws ING-style visibility plots.
+It writes the target lists your telescope wants (IRTF, ING, Keck, Lick, ESO p2, Subaru, MMT, Magellan, or plain CSV/text/VOTable) and optional finder charts.
 There is a point-and-click window for people who do not use Python, and a command line for those who do.
 
 ## Downloading (nothing else to install)
@@ -37,6 +39,16 @@ Work down the left-hand side:
 
 The *Plan* tab shows the night: each target's block, its standard and how far the telescope moves to reach it.
 The *Visibility* tab shows ING-style plots of every target's altitude through the night, with the planned blocks drawn thick.
+
+## Try it
+`examples/example_targets.csv` holds 40 made-up targets (synthetic positions, not real objects) spread around the sky, with sexagesimal coordinates, string and numeric spectral types, proper motions and an `exptime` column of minutes.
+Open it in the window (or send it from TOPCAT) and try, for example:
+- the date picker and different observatories (*irtf*, *paranal*, *lapalma*) to see which targets survive and how the plan changes;
+- *From column* → `exptime` instead of the same time for every target, or longer standard and calibration times, until the night overflows and some targets become `extra`;
+- a stricter *Max airmass* or *Max distance* for standards, and the Moon filter set to *custom*;
+- ticking extra output formats and finder charts.
+
+From the command line: `targetlist make examples/example_targets.csv --date 2026-11-30 --site irtf --target-time-col exptime --formats irtf,keck,csv`.
 
 ## Using the command line
 ```bash
@@ -97,7 +109,7 @@ Add another hips2fits service with `--hips2fits-url`.
 If no hips2fits service answers and [Aladin Desktop](https://aladin.cds.unistra.fr/) is installed as an `aladin` command, the remaining charts are drawn in one Aladin session from the IRSA copies of the 2MASS, DSS2 and AllWISE surveys instead.
 
 ### Bundled data
-`data/observatories.csv` is a snapshot of astropy's site registry (astropy-data `coordinates/sites.json`, BSD 3-Clause licence).
+`src/targetlist_generator/data/observatories.csv` is a snapshot of astropy's site registry (astropy-data `coordinates/sites.json`, BSD 3-Clause licence).
 
 ## Developing
 ```bash

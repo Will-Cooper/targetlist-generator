@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "targetlist-generator"
 version = "2.1.0"
-description = "Cut target lists to a night's visibility, pair telluric standards, write IRTF/ING lists and finder charts"
+description = "Plan an observing night from a target table: visibility, airmass-ordered blocks with nearby telluric standards, visibility plots, finder charts and telescope target lists"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }

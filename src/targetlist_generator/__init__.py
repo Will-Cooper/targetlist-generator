@@ -1,4 +1,5 @@
-"""Cut target lists to a night's visibility, pair telluric standards, write IRTF/ING lists and finder charts."""
+"""Plan an observing night from a target table: visibility, airmass-ordered blocks with nearby telluric standards,
+visibility plots, finder charts and telescope target lists."""
 from importlib.metadata import version
 
 from .pipeline import make_finders, make_targetlist

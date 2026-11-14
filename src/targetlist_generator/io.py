@@ -1,4 +1,4 @@
-"""Read target tables and write IRTF, no-standards and ING ``.cat`` target lists."""
+"""Read target tables (CSV, FITS, ECSV, VOTable, IRTF lists) into one standard set of columns."""
 from pathlib import Path
 
 import astropy.units as u

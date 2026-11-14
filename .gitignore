@@ -16,3 +16,4 @@ targetlist_out/
 *fits
 *cat
 !src/targetlist_generator/data/*.csv
+!examples/*.csv
