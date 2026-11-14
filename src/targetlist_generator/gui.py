@@ -250,13 +250,16 @@ class MainWindow(QMainWindow):
 
         # 4. standards
         self.stds = QGroupBox('4. Telluric standards', checkable=True)
-        self.std_band, self.std_spt = QComboBox(), QComboBox()
+        self.std_file = QLineEdit(placeholderText='bundled list: B9V-A1V, K = 5-9 mag')
+        self.std_file.textChanged.connect(lambda text: text or self.set_std_bands(standards.BANDS, 'K'))
+        self.std_band, self.std_spt = QComboBox(editable=True), QComboBox()
         self.std_band.addItems(standards.BANDS)
         self.std_band.setCurrentText('K')
         self.std_spt.addItems(('any', 'A0V', 'A1V', 'B9V'))
         self.std_tol = spin(0.01, 1, 0.1, 2, 0.05)
         self.std_sep = spin(1, 90, 20, 0, 5)
-        form(self.stds, (('Band', self.std_band), ('Spectral type', self.std_spt),
+        form(self.stds, (('Your own list (optional)', self.with_browse(self.std_file, self.browse_standards)),
+                         ('Magnitude column', self.std_band), ('Spectral type', self.std_spt),
                          ('Airmass tolerance', self.std_tol), ('Max distance [deg]', self.std_sep)))
 
         # 5. optional RA/Dec box
@@ -294,7 +297,7 @@ class MainWindow(QMainWindow):
         self.progress = QProgressBar(textVisible=False)
         self.progress.setRange(0, 1)
         self.status = QLabel(wordWrap=True)
-        compact(self.mag_col, self.time_col, self.priority_col, self.site, self.survey)
+        compact(self.mag_col, self.time_col, self.priority_col, self.site, self.survey, self.std_band)
 
         inputs = QWidget()
         column = QVBoxLayout(inputs)
@@ -351,6 +354,30 @@ class MainWindow(QMainWindow):
             self.from_samp = False
             self.load_targets(path)
             self.default_formats()
+
+    def browse_standards(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Your standards', str(Path.home()), TABLES)
+        if path:
+            self.load_standards_file(path)
+
+    def load_standards_file(self, path: str):
+        """Use your own standards: offer their numeric columns as the magnitude column."""
+        try:
+            df = io.read_table(path)
+        except (OSError, ValueError) as err:
+            QMessageBox.critical(self, 'Cannot read standards', str(err))
+            return
+        numeric = list(df.select_dtypes('number').columns.drop(['ra', 'dec'], errors='ignore'))
+        self.std_file.setText(path)
+        self.set_std_bands(numeric, next((c for c in numeric if c in ('k', 'kmag', 'tmassk')), None))
+        if 'spt' not in df.columns:
+            self.std_spt.setCurrentText('any')
+
+    def set_std_bands(self, bands, choice: str | None):
+        self.std_band.clear()
+        self.std_band.addItems(list(bands))
+        if choice:
+            self.std_band.setCurrentText(choice)
 
     def browse_out(self):
         path = QFileDialog.getExistingDirectory(self, 'Where should the lists and charts be saved?',
@@ -454,6 +481,7 @@ class MainWindow(QMainWindow):
               'cal_time': self.cal_time.value(), 'std_time': self.std_time.value(),
               'priority_col': '' if self.priority_col.currentText() == NO_PRIORITY else self.priority_col.currentText(),
               'with_standards': self.stds.isChecked(), 'std_band': self.std_band.currentText(),
+              'standards_file': self.std_file.text() or None,
               'std_spt': None if self.std_spt.currentText() == 'any' else self.std_spt.currentText(),
               'std_airmass_tol': self.std_tol.value(), 'std_max_sep': self.std_sep.value(), 'outputs': keys,
               'finders': self.finders.isChecked(), 'survey': self.survey.currentText(), 'fov': self.fov.value(),

@@ -163,3 +163,16 @@ def test_priority_column_picked_up(window, target_csv, tmp_path):
     assert window.priority_col.currentText() == 'priority' and window.kwargs()['priority_col'] == 'priority'
     window.priority_col.setCurrentText(NO_PRIORITY)
     assert window.kwargs()['priority_col'] == ''
+
+
+def test_own_standards_in_window(window, tmp_path):
+    from targetlist_generator import standards
+    path = tmp_path / 'mine.csv'
+    pd.DataFrame({'name': ['S1'], 'ra': [10.0], 'dec': [5.0], 'jmag': [7.5], 'kmag': [7.0]}).to_csv(path, index=False)
+    window.load_standards_file(str(path))
+    assert [window.std_band.itemText(i) for i in range(window.std_band.count())] == ['jmag', 'kmag']
+    assert window.std_band.currentText() == 'kmag'
+    window.target_list.setText('x.csv')
+    assert window.kwargs()['standards_file'] == str(path)
+    window.std_file.clear()
+    assert window.std_band.currentText() == 'K' and window.std_band.count() == len(standards.BANDS)

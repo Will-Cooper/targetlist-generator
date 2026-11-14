@@ -58,7 +58,7 @@ Work down the left-hand side:
 1. **Target table**: browse to a file, or tick *Listen for TOPCAT (SAMP)* and use TOPCAT's *Interop → Send table to → Target List Generator* (a SAMP hub is started if none is running). The window checks the table has the columns it needs before you can plan.
 2. **Time per target block**: the same observing time for every target (default 30 min) or a column of minutes from the table, plus the time for each standard (default 10 min) and for calibrations (default 5 min), and optionally a priority column (picked automatically when the table has one called `priority`).
 3. **Night and observatory**: pick the evening from the calendar and type part of an observatory's name or alias (e.g. *irtf*, *keck*, *palma*) or enter latitude/longitude; set the airmass limit and the Moon filter (automatic by default: 10 deg from a new Moon up to 40 deg from a full one).
-4. **Telluric standards**: on or off, band, spectral type, airmass tolerance and maximum distance on the sky.
+4. **Telluric standards**: on or off, optionally your own list instead of the bundled one, magnitude column, spectral type, airmass tolerance and maximum distance on the sky.
 5. Optionally an **RA/Dec box**.
 6. **Outputs**: the list format for the chosen observatory is ticked for you (otherwise CSV, or VOTable for a table sent from TOPCAT); tick others as you like, optionally finder charts, and choose where to save them (asked when you press *Plan the night* if not set).
 
@@ -107,7 +107,8 @@ The bundled list holds 4969 B9V–A1V stars with K = 5–9 mag.
 Each standard is chosen for the time it will be observed, straight after its target: the nearest on the sky within `--std-max-sep` (default 20 deg) whose airmass is within `--std-airmass-tol` (default 0.1) of the target's.
 Short slews come first: when no nearby standard matches the airmass, the closest match within `--std-max-sep` is used, and only when there is no standard that near at all is one further away taken; both compromises are noted in the plan's `std_note`.
 Without a night, the standard nearest on the sky to where the target will be after its block is used.
-Choose the magnitude band with `--std-band`, a single spectral type with `--std-spt`, or your own list with `--standards-file`.
+Choose the magnitude band with `--std-band` (bundled list: B, V, G, J, H or K) and a single spectral type with `--std-spt`.
+To use your own standards instead, give `--standards-file` (or *Your own list* in the window's standards section): any table the tool reads (CSV, FITS, VOTable, ...) with `name` (or `shortname`), `ra`, `dec` (degrees or sexagesimal) and a magnitude column, named with `--std-band`; spectral types (`spt`) and proper motions (`pmra`, `pmdec`) are used when present.
 
 ### Output (in `--out-dir`, default `targetlist_out/`)
 With a night, always `<name>_plan.csv` (status, target and standard times, airmasses, standard distance, Moon separation) and `<name>_visibility_N.png` (ten targets per plot).

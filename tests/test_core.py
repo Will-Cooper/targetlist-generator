@@ -307,3 +307,23 @@ def test_priority_column(target_csv, tmp_path):
     plan, _ = make_targetlist(path, tmp_path, priority_col='rank', log=lambda s: None, date='2026-11-30', **IRTF)
     assert set(plan['priority']) <= {1, 2}
     assert 'priority' in pd.read_csv(tmp_path / 'p_plan.csv').columns
+
+
+def test_own_standards_list(target_csv, tmp_path):
+    """A VOTable of standards with 'name', sexagesimal positions, a 'kmag' column and no spt is used for pairing."""
+    targets = io.read_targets(target_csv)
+    coords = SkyCoord((targets.ra.to_numpy() + 2) * u.deg, targets.dec.to_numpy() * u.deg)  # one near each target
+    own = Table({'name': [f'STD {i}' for i in range(len(targets))],
+                 'RA': coords.ra.to_string(u.hourangle, sep=':'), 'Dec': coords.dec.to_string(sep=':'),
+                 'kmag': np.full(len(targets), 7.0), 'pmra': np.zeros(len(targets))})
+    path = tmp_path / 'mine.vot'
+    own.write(path, format='votable')
+    stds = standards.load_standards('tmassk', 'kmag', path=path)
+    assert list(stds.columns[:3]) == ['shortname', 'ra', 'dec'] and stds['tmassk'].eq(7).all()
+    plan, _ = make_targetlist(target_csv, tmp_path, standards_file=path, std_band='kmag', log=lambda s: None,
+                              date='2026-11-30', **IRTF)
+    assert plan['standard'].str.startswith('STD_').all()
+    with pytest.raises(ValueError, match="no magnitude column 'k'.*kmag"):
+        standards.load_standards('tmassk', 'K', path=path)
+    with pytest.raises(ValueError, match='no spt column'):
+        standards.load_standards('tmassk', 'kmag', spt='A0V', path=path)

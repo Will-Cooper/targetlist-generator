@@ -4,8 +4,8 @@ authors:
   - family-names: Cooper
     given-names: W. J.
     orcid: https://orcid.org/0000-0003-3501-8967
-title: "Will-Cooper/targetlist-generator: v2.2.0"
-version: 2.2.0
+title: "Will-Cooper/targetlist-generator: v2.3.0"
+version: 2.3.0
 doi: 10.5281/zenodo.6624861
 date-released: 2026-11-14
 repository-code: https://github.com/Will-Cooper/targetlist-generator

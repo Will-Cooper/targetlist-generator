@@ -71,8 +71,10 @@ def build_parser() -> argparse.ArgumentParser:
     box.add_argument('-d', '--dec-range', nargs=2, metavar=('LOWER', 'UPPER'), help='degrees or e.g. 15d30m')
     std = make.add_argument_group('telluric standards')
     std.add_argument('--no-standards', action='store_true', help='skip pairing standards')
-    std.add_argument('--standards-file', help='CSV like the bundled list (shortname, ra, dec, spt, band columns)')
-    std.add_argument('--std-band', default='K', choices=standards.BANDS, help='(default: %(default)s)')
+    std.add_argument('--standards-file', help='your own standards (CSV, FITS, VOTable, ...): name or shortname, ra, '
+                     'dec and a magnitude column; spt and proper motions optional')
+    std.add_argument('--std-band', default='K', help='magnitude column of the standards (bundled list: '
+                     + ', '.join(standards.BANDS) + '; default: %(default)s)')
     std.add_argument('--std-spt', help='only standards of this type, e.g. A0V (default: B9V-A1V)')
     std.add_argument('--std-airmass-tol', type=float, default=0.1,
                      help='standard within this airmass of the target when possible (default: %(default)s)')

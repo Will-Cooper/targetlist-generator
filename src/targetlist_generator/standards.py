@@ -8,23 +8,33 @@ import pandas as pd
 from astropy.coordinates import SkyCoord
 
 from . import sky
-from .io import normalise
+from .io import normalise, read_table
 
 BUNDLED = files(__package__) / 'data' / 'large_standards_bright.csv'  # B9V-A1V, K = 5-9 mag, 4969 stars
-BANDS = ('B', 'V', 'G', 'J', 'H', 'K')
+BANDS = ('B', 'V', 'G', 'J', 'H', 'K')  # magnitude columns of the bundled list
 
 
 def load_standards(mag_col: str, band: str = 'K', spt: str | None = None, path: str | Path | None = None):
-    """Standards with ``band`` renamed to ``mag_col`` (to sit in the target list), optionally one spectral type."""
-    raw = pd.read_csv(path or BUNDLED)
+    """Standards from the bundled B9V-A1V list or your own table (any format ``read_table`` understands: needs name
+    or shortname, ra, dec and the magnitude column ``band``; spt and proper motions optional). ``band`` is renamed
+    to ``mag_col`` so the standards sit in the target list; ``spt`` keeps only that spectral type."""
+    source = Path(path) if path else Path(str(BUNDLED))
+    raw = read_table(source, mag_col)
+    band, mag_col = band.lower(), mag_col.lower()
     if band not in raw.columns:
-        raise ValueError(f'Standards have no band {band}; available: {[c for c in BANDS if c in raw.columns]}')
-    raw = raw[['shortname', 'ra', 'dec', 'spt', band]].rename(columns={band: mag_col})
+        numeric = list(raw.select_dtypes('number').columns.drop(['ra', 'dec'], errors='ignore'))
+        raise ValueError(f'{source.name} has no magnitude column {band!r}; its numeric columns are {numeric}')
+    raw = raw.drop(columns=[c for c in (mag_col, 'priority') if c in raw.columns and c != band])
+    raw = raw.rename(columns={band: mag_col})
+    if 'spt' not in raw.columns:
+        if spt:
+            raise ValueError(f'{source.name} has no spt column to pick spectral type {spt} from')
+        raw['spt'] = ''
     if spt:
-        raw = raw[raw['spt'].str.strip() == spt]
+        raw = raw[raw['spt'].astype(str).str.strip() == spt]
         if raw.empty:
-            raise ValueError(f'No standards of spectral type {spt}')
-    return normalise(raw, mag_col, source=str(path or BUNDLED))
+            raise ValueError(f'No standards of spectral type {spt} in {source.name}')
+    return normalise(raw, mag_col, source=source.name)
 
 
 def pick(targets: pd.DataFrame, stds: pd.DataFrame, times, location, std_at: np.ndarray, target_am: np.ndarray,
