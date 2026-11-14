@@ -1,7 +1,10 @@
 """Night window and target visibility from an observatory site, plus plain RA/Dec box cuts."""
+from datetime import timedelta, tzinfo
+from datetime import timezone as fixed_offset
 from difflib import get_close_matches
 from functools import cache
 from importlib.resources import files
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import astropy.units as u
 import numpy as np
@@ -30,6 +33,25 @@ def find_site(site: str) -> pd.Series:
         raise ValueError(f'Unknown observatory {site!r}' + (f'; did you mean {close}?' if close else '')
                          + ' Give --lat/--lon instead for a site not in the list.')
     return sites.loc[keys[site.strip().lower()]]
+
+
+def local_zone(site: str | None = None, lon: float | None = None, timezone: str | None = None) -> tzinfo:
+    """The observatory's time zone: ``timezone`` (an IANA name such as Pacific/Honolulu) when given, else the
+    bundled site's, else a whole-hour offset from the longitude, named as such (it ignores summer time)."""
+    if timezone:
+        try:
+            return ZoneInfo(timezone)
+        except (ZoneInfoNotFoundError, ValueError) as err:
+            raise ValueError(f'Unknown time zone {timezone!r}: use a name such as Pacific/Honolulu or '
+                             'Europe/London') from err
+    if site:
+        return ZoneInfo(find_site(site)['timezone'])
+    hours = round(lon / 15)
+    return fixed_offset(timedelta(hours=hours), f'UTC{hours:+d} (from longitude)')
+
+
+def zone_name(zone: tzinfo) -> str:
+    return getattr(zone, 'key', None) or zone.tzname(None)
 
 
 def site_location(site: str | None = None, lat: float | None = None, lon: float | None = None) -> EarthLocation:

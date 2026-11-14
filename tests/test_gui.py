@@ -237,3 +237,14 @@ def test_own_hub_has_web_profile(window, monkeypatch):
     window.samp.start()
     assert made['hub'] == {'web_profile': True, 'web_profile_dialog': window.samp.consent}
     window.samp.client = window.samp.hub = None  # stand-ins: nothing to stop
+
+
+def test_timezone_follows_observatory(window):
+    assert window.timezone.currentText() == 'US/Hawaii'  # IRTF by default
+    window.site.setCurrentIndex(next(i for i in range(window.site.count())
+                                     if window.site.itemText(i).startswith('Roque de los Muchachos')))
+    assert window.timezone.currentText() == 'Atlantic/Canary'
+    window.lat.setValue(-24.6)  # typed coordinates: estimated from the longitude unless chosen
+    assert window.timezone.currentText() == ''
+    window.target_list.setText('x.csv')
+    assert window.kwargs()['timezone'] is None

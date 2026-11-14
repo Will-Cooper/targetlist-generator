@@ -102,7 +102,8 @@ Each target then gets a block: its observing time (`--target-time`, or `--target
 Blocks are laid back to back through the night, each time taking the target closest to its best airmass of the night, so the list comes out in time (and so roughly RA) order.
 With priorities, each level counts as 0.1 airmass when targets compete: a priority-1 target is taken before a priority-3 one unless it is more than 0.2 above its best airmass, and on a full night lower priorities become the extras.
 No visible target is dropped: when the night is too full, the targets that do not fit are listed as `extra` at their best time, for you to choose between on the night.
-Observatories come from a bundled copy of astropy's site registry (no internet needed); `targetlist sites <search>` lists them.
+Observatories come from a bundled copy of astropy's site registry (no internet needed), with their time zones; `targetlist sites <search>` lists them.
+The plan gives local times as well as UTC, in the observatory's time zone (choose another with `--timezone`, e.g. `Pacific/Honolulu`); with typed coordinates the zone is a whole-hour offset from the longitude unless you choose one. The telescope list files are unchanged.
 
 ### Standards
 The bundled list holds 4969 B9V–A1V stars with K = 5–9 mag.
@@ -113,7 +114,7 @@ Choose the magnitude band with `--std-band` (bundled list: B, V, G, J, H or K) a
 To use your own standards instead, give `--standards-file` (or *Your own list* in the window's standards section): any table the tool reads, with a name, RA, Dec (degrees or sexagesimal) and a magnitude column (`--std-band`); spectral types and proper motions are used when present. Its columns are guessed the same way; correct them in the window or with `--std-columns`.
 
 ### Output (in `--out-dir`, default `targetlist_out/`)
-With a night, always `<name>_plan.csv`, the observing sequence (each target followed by its standard: step, kind, name, status, priority, start and end UTC, airmass, the standard's distance from its target, Moon separation, notes, RA and Dec) and `visibility/<name>_NN_UThhmm-hhmm.png` (ten targets per plot, numbered in plan order and named by the UT span of their blocks).
+With a night, always `<name>_plan.csv`, the observing sequence (each target followed by its standard: step, kind, name, status, priority, start and end in UTC and local time, airmass, the standard's distance from its target, Moon separation, notes, RA and Dec) and `visibility/<name>_NN_UThhmm-hhmm.png` (ten targets per plot, numbered in plan order and named by the UT span of their blocks).
 Plus the formats chosen with `--formats`, each listing every target followed by its standard.
 The default, `auto`, writes the chosen observatory's own format (IRTF → `irtf`, Keck → `keck`, Lick → `lick`, Paranal and La Silla → `eso`, Subaru → `subaru`, MMT → `mmt`, Las Campanas → `magellan`, La Palma → `cat`), and CSV otherwise:
 

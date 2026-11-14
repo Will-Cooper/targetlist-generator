@@ -61,6 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
     night.add_argument('--site', help="observatory name or alias, e.g. irtf, lapalma, keck (see 'targetlist sites')")
     night.add_argument('--lat', type=float, help='observatory latitude [deg], north positive')
     night.add_argument('--lon', type=float, help='observatory longitude [deg], east positive')
+    night.add_argument('--timezone', help='local time zone for the plan, e.g. Pacific/Honolulu (default: the '
+                       "observatory's; with --lat/--lon, a whole-hour offset from the longitude)")
     night.add_argument('--twilight', type=float, default=-12.0, help='Sun altitude ending twilight [deg] '
                        '(default: %(default)s; -18 for astronomical)')
     night.add_argument('--max-airmass', type=float, default=2.0, help='(default: %(default)s)')
@@ -131,7 +133,8 @@ def main(argv: list[str] | None = None) -> None:
                             std_time=args.std_time, std_airmass_tol=args.std_airmass_tol,
                             std_max_sep=args.std_max_sep, outputs=args.formats, finders=args.finders,
                             survey=args.survey, fov=args.fov, urls=urls, date=args.date, site=args.site,
-                            lat=args.lat, lon=args.lon, twilight=args.twilight, max_airmass=args.max_airmass,
+                            lat=args.lat, lon=args.lon, timezone=args.timezone, twilight=args.twilight,
+                            max_airmass=args.max_airmass,
                             min_time=args.min_time, min_moon_sep=args.min_moon_sep,
                             ra_range=args.ra_range, dec_range=args.dec_range)
         else:

@@ -372,3 +372,17 @@ def test_plan_is_an_observing_sequence(target_csv, tmp_path):
     assert pd.Timestamp(std['start_utc']) - pd.Timestamp(target['end_utc']) == pd.Timedelta(minutes=5)
     assert pd.Timestamp(std['end_utc']) - pd.Timestamp(std['start_utc']) == pd.Timedelta(minutes=10)
     assert np.isfinite(std['ra']) and std['separation_deg'] <= 20
+
+
+def test_plan_local_times(target_csv, tmp_path):
+    """Local time beside UTC: the site's zone (Hawaii, UTC-10), a chosen zone, or an offset from the longitude."""
+    make_targetlist(target_csv, tmp_path, log=lambda s: None, date='2026-11-30', site='irtf')
+    seq = pd.read_csv(tmp_path / 'targets_plan.csv')
+    assert set(seq['timezone']) == {'US/Hawaii'}
+    assert (pd.to_datetime(seq['start_utc']) - pd.to_datetime(seq['start_local'])).eq(pd.Timedelta(hours=10)).all()
+    assert sky.zone_name(sky.local_zone(lon=-155.5)) == 'UTC-10 (from longitude)'
+    assert sky.zone_name(sky.local_zone('irtf', timezone='Europe/London')) == 'Europe/London'
+    with pytest.raises(ValueError, match='Unknown time zone'):
+        sky.local_zone('irtf', timezone='Mars/Olympus')
+    irtf = (tmp_path / 'targets_irtf.txt').read_text()
+    assert 'local' not in irtf.lower()  # telescope lists unchanged

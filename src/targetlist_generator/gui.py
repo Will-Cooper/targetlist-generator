@@ -5,6 +5,7 @@ import sys
 import tempfile
 from pathlib import Path
 from urllib.request import urlretrieve
+from zoneinfo import available_timezones
 
 import pandas as pd
 import PySide6
@@ -307,6 +308,13 @@ class MainWindow(QMainWindow):
         self.site.currentIndexChanged.connect(self.site_changed)
         for box in (self.lat, self.lon):
             box.valueChanged.connect(self.coords_typed)
+        self.timezone = QComboBox(editable=True, insertPolicy=QComboBox.NoInsert)
+        self.timezone.addItems(sorted(available_timezones()))
+        self.timezone.lineEdit().setPlaceholderText('from the longitude')
+        zones = QCompleter(self.timezone.model(), self.timezone)
+        zones.setFilterMode(Qt.MatchContains)
+        zones.setCaseSensitivity(Qt.CaseInsensitive)
+        self.timezone.setCompleter(zones)
         self.twilight = spin(-18, 0, -12, 1)
         self.max_airmass = spin(1, 5, 2, 2, 0.1)
         self.min_time = spin(0, 720, 30, 0, 10)
@@ -317,6 +325,7 @@ class MainWindow(QMainWindow):
         self.moon.currentTextChanged.connect(lambda t: self.moon_sep.setEnabled(t == 'custom'))
         form(self.night, (('Evening of', self.date), ('Observatory (type to search)', self.site),
                           ('Latitude [deg]', self.lat), ('Longitude [deg, east +]', self.lon),
+                          ('Local time zone', self.timezone),
                           ('Twilight Sun altitude [deg]', self.twilight), ('Max airmass', self.max_airmass),
                           ('Min time below it [min]', self.min_time),
                           ('Moon separation', pair(self.moon, self.moon_sep))))
@@ -372,7 +381,7 @@ class MainWindow(QMainWindow):
         self.progress = QProgressBar(textVisible=False)
         self.progress.setRange(0, 1)
         self.status = QLabel(wordWrap=True)
-        compact(self.time_col, self.site, self.survey)
+        compact(self.time_col, self.site, self.survey, self.timezone)
 
         inputs = QWidget()
         column = QVBoxLayout(inputs)
@@ -513,6 +522,7 @@ class MainWindow(QMainWindow):
         if row is None:
             return
         site = sky.observatories().loc[row]
+        self.timezone.setCurrentText(site['timezone'])
         for box, value in ((self.lat, site['lat']), (self.lon, site['lon'])):
             box.blockSignals(True)
             box.setValue(value)
@@ -535,6 +545,7 @@ class MainWindow(QMainWindow):
         self.site.blockSignals(True)
         self.site.setCurrentIndex(0)  # typed coordinates: custom site
         self.site.blockSignals(False)
+        self.timezone.setCurrentText('')  # estimated from the longitude unless chosen
         self.default_formats()
 
     def kwargs(self) -> dict:
@@ -562,6 +573,7 @@ class MainWindow(QMainWindow):
             moon = self.moon.currentText()
             kw |= {'date': self.date.date().toString('yyyy-MM-dd'), 'twilight': self.twilight.value(),
                    'max_airmass': self.max_airmass.value(), 'min_time': self.min_time.value(),
+                   'timezone': self.timezone.currentText().strip() or None,
                    'min_moon_sep': self.moon_sep.value() if moon == 'custom' else moon.split()[0]}
             row = self.site.currentData()
             if row is None:
@@ -615,7 +627,7 @@ class MainWindow(QMainWindow):
     def on_done(self, result):
         rows, paths = result
         if 'status' in rows.columns:  # planned night
-            seq = plan_sequence(rows, self.std_time.value())
+            seq = plan_sequence(rows, self.std_time.value(), zone=rows.attrs.get('zone'))
             shown = seq.drop(columns=[c for c in ('ra', 'dec') if c in seq.columns])
         else:
             shown = io.formatted(rows, self.target_cols.choice()['mag'].lower())

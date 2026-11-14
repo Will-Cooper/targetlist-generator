@@ -1,5 +1,6 @@
 """One entry point for the CLI and GUI: cut a target list, plan the night, pair standards, write lists and charts."""
 from collections.abc import Callable, Iterable
+from datetime import tzinfo
 from pathlib import Path
 from typing import NamedTuple
 
@@ -11,7 +12,8 @@ from astropy.time import Time
 from . import finder, formats, io, planner, schedule, sky, standards
 
 Log = Callable[[str], None]
-SEQUENCE_COLUMNS = ('step', 'kind', 'shortname', 'status', 'priority', 'start_utc', 'end_utc', 'airmass',
+SEQUENCE_COLUMNS = ('step', 'kind', 'shortname', 'status', 'priority', 'start_utc', 'end_utc', 'start_local',
+                    'end_local', 'timezone', 'airmass',
                     'separation_deg', 'moon_sep', 'note', 'ra', 'dec')
 
 
@@ -21,11 +23,13 @@ class Night(NamedTuple):
     times: Time
     location: EarthLocation
     max_airmass: float
+    zone: tzinfo
 
 
 def cut_targets(targets: pd.DataFrame, log: Log, date: str | None = None, site: str | None = None,
                 lat: float | None = None, lon: float | None = None, twilight: float = -12.0,
                 max_airmass: float = 2.0, min_time: float = 30.0, min_moon_sep: str | float = 'auto',
+                timezone: str | None = None,
                 ra_range: tuple | None = None, dec_range: tuple | None = None) -> tuple[pd.DataFrame, Night | None]:
     """Apply the RA/Dec box and, when ``date`` is given, the night-visibility and Moon cuts
     (``min_moon_sep`` 'auto', 'off' or degrees; see ``schedule.moon_limit``).
@@ -40,7 +44,9 @@ def cut_targets(targets: pd.DataFrame, log: Log, date: str | None = None, site: 
     if date is not None:
         location = sky.site_location(site, lat, lon)
         times = sky.night_times(date, location, twilight)
-        night = Night(date, site or f'{lat:.4f}, {lon:.4f}', times, location, max_airmass)
+        zone = sky.local_zone(site, location.lon.deg, timezone)
+        night = Night(date, site or f'{lat:.4f}, {lon:.4f}', times, location, max_airmass, zone)
+        log(f'Local times are {sky.zone_name(zone)}')
         log(f'Night of {date}: Sun below {twilight:g} deg from {times[0].iso[:16]} to {times[-1].iso[:16]} UTC')
         seen = sky.visible(ra, dec, times, location, max_airmass, min_time)
         log(f'{seen.sum()} of {len(targets)} targets reach airmass <= {max_airmass:g} for >= {min_time:g} min')
@@ -58,9 +64,11 @@ def cut_targets(targets: pd.DataFrame, log: Log, date: str | None = None, site: 
     return targets[keep].reset_index(drop=True), night
 
 
-def plan_sequence(plan: pd.DataFrame, std_time: float, paired: pd.DataFrame | None = None) -> pd.DataFrame:
+def plan_sequence(plan: pd.DataFrame, std_time: float, paired: pd.DataFrame | None = None,
+                  zone: tzinfo | None = None) -> pd.DataFrame:
     """The night in observing order: each target, then its standard (when standards are used), with start and
-    end UTC, airmass, the standard's distance from its target and any note. ``paired`` adds standards' RA/Dec."""
+    end UTC (and local time in ``zone``), airmass, the standard's distance from its target and any note.
+    ``paired`` adds standards' RA/Dec."""
     steps = []
     for i, row in enumerate(plan.itertuples(index=False)):
         target = row._asdict()
@@ -78,6 +86,11 @@ def plan_sequence(plan: pd.DataFrame, std_time: float, paired: pd.DataFrame | No
                           'ra': None if paired is None else paired['ra'].iloc[i],
                           'dec': None if paired is None else paired['dec'].iloc[i]})
     seq = pd.DataFrame(steps)
+    if zone is not None:
+        for end in ('start', 'end'):
+            utc = pd.to_datetime(seq[f'{end}_utc']).dt.tz_localize('UTC')
+            seq[f'{end}_local'] = utc.dt.tz_convert(zone).dt.strftime('%Y-%m-%d %H:%M')
+        seq['timezone'] = sky.zone_name(zone)
     return seq[[c for c in SEQUENCE_COLUMNS if c in seq.columns and seq[c].notna().any()]]
 
 
@@ -154,7 +167,8 @@ def make_targetlist(target_list: str | Path, out_dir: str | Path, mag_col: str |
     paths = formats.write(keys, stem, rows, paired, mag_col)
     if night is not None:
         plan_path = stem.with_name(f'{stem.name}_plan.csv')
-        plan_sequence(rows, std_time, paired).round({'ra': 6, 'dec': 6}).to_csv(plan_path, index=False)
+        rows.attrs['zone'] = night.zone  # the window shows local times too
+        plan_sequence(rows, std_time, paired, night.zone).round({'ra': 6, 'dec': 6}).to_csv(plan_path, index=False)
         progress('Drawing visibility plots', 0, 0)
         paths += [plan_path, *schedule.visibility_plots(
             rows, night.date, night.location, night.max_airmass, night.title, stem,
