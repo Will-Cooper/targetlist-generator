@@ -11,7 +11,7 @@ REQUIRED = ('shortname', 'ra', 'dec')
 TXT_NAMES = ['index', 'shortname', 'ra', 'dec', 'epoch', 'pmra', 'pmdec', 'spt']  # IRTF list columns, mag appended
 IRTF_RULE = '#+-----'
 TEXT_SUFFIXES = ('.txt', '.dat', '.tbl', '.ascii', '.text')
-FILE_TYPES = ('CSV, TSV, text tables (whitespace or IPAC .tbl, header line optional), FITS (also gzipped), '
+FILE_TYPES = ('CSV, TSV, text tables with a header line (whitespace or IPAC .tbl), FITS (also gzipped), '
               'VOTable (.vot/.xml), ECSV, and this tool\'s own IRTF lists')
 # Standard column -> names recognised for it (lower case, first match wins); the user can always choose others.
 ALIASES = {
