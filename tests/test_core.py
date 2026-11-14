@@ -1,8 +1,11 @@
+import re
+
 import astropy.units as u
 import numpy as np
 import pandas as pd
 import pytest
 from astropy.coordinates import AltAz, SkyCoord
+from astropy.table import Table
 
 from targetlist_generator import cli, io, make_targetlist, sky, standards
 
@@ -87,7 +90,8 @@ def test_make_targetlist_outputs(target_csv, tmp_path):
 
 def test_night_cut_keeps_only_visible(target_csv, tmp_path):
     kept, _ = make_targetlist(target_csv, tmp_path, with_standards=False, log=lambda s: None,
-                              date='2026-11-14', lat=19.83, lon=-155.47, max_airmass=1.5, min_time=60)
+                              date='2026-11-14', lat=19.83, lon=-155.47, max_airmass=1.5, min_time=60,
+                              min_moon_sep='off')
     assert 0 < len(kept) < 25
     loc = sky.site_location(lat=19.83, lon=-155.47)
     am = sky.airmass(kept.ra.to_numpy(), kept.dec.to_numpy(), sky.night_times('2026-11-14', loc), loc)
@@ -126,54 +130,98 @@ def test_plot_finder_offline(tmp_path):
 IRTF = {'lat': 19.83, 'lon': -155.47}
 
 
-def test_matched_standards_brute_force(target_csv):
-    loc = sky.site_location(**IRTF)
-    times = sky.night_times('2026-11-14', loc)
-    targets = io.read_targets(target_csv).iloc[:6]
-    stds = standards.load_standards('tmassk', spt='A0V')
-    got, _ = standards.matched_standards(targets, stds, times, loc, offset=30, tol=0.1)
-    t_am = sky.airmass(targets.ra.to_numpy(), targets.dec.to_numpy(), times, loc)
-    s_am = sky.airmass(stds.ra.to_numpy(), stds.dec.to_numpy(), times, loc)
-    for i in range(len(targets)):
-        best = t_am[:, i].argmin()
-        with np.errstate(invalid='ignore'):
-            diff = np.nan_to_num(np.abs(s_am[min(best + 6, len(times) - 1)] - t_am[best, i]), nan=np.inf)
-        sep = SkyCoord(targets.ra[i] * u.deg, targets.dec[i] * u.deg).separation(
-            SkyCoord(stds.ra.to_numpy() * u.deg, stds.dec.to_numpy() * u.deg)).deg
-        want = np.argmin(np.where(diff <= 0.1, sep, np.inf)) if (diff <= 0.1).any() else np.argmin(diff)
-        assert got.shortname[i] == stds.shortname.iloc[want]
+def test_site_lookup():
+    assert sky.site_location('IRTF').lat.deg == pytest.approx(19.826, abs=1e-3)
+    assert sky.site_location('lapalma').lon.deg == pytest.approx(-17.88, abs=1e-2)
+    with pytest.raises(ValueError, match="did you mean.*paranal"):
+        sky.site_location('Paranel')
 
 
-def test_schedule_order_and_files(target_csv, tmp_path):
-    kept, paths = make_targetlist(target_csv, tmp_path, log=lambda s: None, date='2026-11-14', **IRTF)
-    assert list(kept['best_utc']) == sorted(kept['best_utc'])
-    sched = pd.read_csv(tmp_path / 'targets_schedule.csv')
-    assert list(sched.columns) == ['shortname', 'best_utc', 'min_airmass', 'start_utc', 'end_utc', 'moon_sep',
-                                   'standard']
-    assert (sched['start_utc'] <= sched['best_utc']).all() and (sched['best_utc'] <= sched['end_utc']).all()
-    assert (sched['min_airmass'] <= 2).all()
-    irtf = (tmp_path / 'targets_irtf.txt').read_text().splitlines()[3::2]
-    assert [line.split('\t')[1] for line in irtf] == list(kept['shortname'])
-    assert (tmp_path / 'targets_airmass.png').stat().st_size > 20_000
-    kept_in, _ = make_targetlist(target_csv, tmp_path, log=lambda s: None, date='2026-11-14', order='input', **IRTF)
-    names = list(io.read_targets(target_csv)['shortname'])
-    assert sorted(kept_in['shortname'], key=names.index) == list(kept_in['shortname'])
-
-
-def test_moon_separation_and_cut(target_csv, tmp_path):
-    from astropy.coordinates import get_body
-
+def test_moon_limit():
     from targetlist_generator import schedule
+    assert schedule.moon_limit('auto', 0) == 10 and schedule.moon_limit('auto', 1) == 40
+    assert schedule.moon_limit('off', 0.5) == 0 and schedule.moon_limit('25', 0.5) == 25
+    with pytest.raises(ValueError):
+        schedule.moon_limit('200', 0.5)
+
+
+def test_standard_never_across_sky():
+    """A standard at the target's airmass 180 deg away must lose to a nearby one slightly off in airmass."""
+    loc = sky.site_location(lat=0.0, lon=0.0)
+    times = sky.night_times('2026-03-20', loc)
+    k = len(times) // 2
+    lst = times[k].sidereal_time('apparent', longitude=loc.lon).deg
+    target = pd.DataFrame({'shortname': ['T'], 'ra': [lst], 'dec': [10.0]})  # transiting, altitude 80 deg
+    stds = pd.DataFrame({'shortname': ['far', 'near'], 'ra': [(lst + 180) % 360, lst + 5], 'dec': [-10.0, 25.0]})
+    am_t = sky.airmass(target.ra.to_numpy(), target.dec.to_numpy(), times[k:k + 1], loc)[0]
+    got, notes, _, sep = standards.pick(target, stds, times, loc, np.array([k]), am_t, tol=0.01, max_sep=20)
+    assert got.shortname[0] == 'near' and sep[0] < 20 and notes[0] == 'no standard within 0.01 airmass'
+
+
+def test_planner_no_overlap_no_drop(target_csv):
+    from targetlist_generator import planner
     loc = sky.site_location(**IRTF)
-    times = sky.night_times('2026-11-14', loc)
+    times = sky.night_times('2026-11-30', loc)
     targets = io.read_targets(target_csv)
-    body, lit = schedule.moon(times, loc)
-    assert 0 <= lit <= 1
-    ref = get_body('moon', times[len(times) // 2], loc)
-    stars = SkyCoord(targets.ra.to_numpy() * u.deg, targets.dec.to_numpy() * u.deg).transform_to(ref.frame)
-    assert np.allclose(schedule.moon_separation(targets, body), ref.separation(stars).deg, atol=1e-6)
-    kept, _ = make_targetlist(target_csv, tmp_path, log=lambda s: None, date='2026-11-14', min_moon_sep=60, **IRTF)
-    assert (kept['moon_sep'] >= 60).all()
+    targets = targets[sky.visible(targets.ra.to_numpy(), targets.dec.to_numpy(), times, loc)].reset_index(drop=True)
+    minutes = np.full(len(targets), 45.0)
+    plan, paired = planner.plan_night(targets, times, loc, 2.0, minutes, 5, 10, standards.load_standards('tmassk'))
+    assert sorted(plan.shortname) == sorted(targets.shortname)  # nothing dropped
+    assert list(plan.target_start) == sorted(plan.target_start) and len(paired) == len(plan)
+    blocks = plan[plan.status == 'planned']
+    ends = pd.to_datetime(blocks.target_start) + pd.Timedelta(minutes=60)  # 45 + 5 + 10
+    assert (pd.to_datetime(blocks.target_start).iloc[1:].to_numpy() >= ends.iloc[:-1].to_numpy()).all()
+    assert (blocks.target_start >= times[0].iso[:16]).all() and (ends <= pd.Timestamp(times[-1].iso) +
+                                                                 pd.Timedelta(minutes=5)).all()
+    assert (plan.mean_airmass[plan.status == 'planned'] <= 2).all()
+
+
+def test_target_time_column_and_plan_files(target_csv, tmp_path):
+    df = pd.read_csv(target_csv).assign(exptime=20)
+    df.loc[0, 'exptime'] = -1
+    path = tmp_path / 'timed.csv'
+    df.to_csv(path, index=False)
+    with pytest.raises(ValueError, match='positive number of minutes'):
+        make_targetlist(path, tmp_path, target_time_col='exptime', min_moon_sep='off', log=lambda s: None,
+                        date='2026-11-30', ra_range=('0', '360'), **IRTF)
+    df.loc[0, 'exptime'] = 20
+    df.to_csv(path, index=False)
+    plan, paths = make_targetlist(path, tmp_path, target_time_col='exptime', log=lambda s: None,
+                                  date='2026-11-30', **IRTF)
+    starts, ends = pd.to_datetime(plan.target_start), pd.to_datetime(plan.target_end)
+    assert ((ends - starts) == pd.Timedelta(minutes=20)).all()
+    assert (tmp_path / 'timed_plan.csv').exists() and (tmp_path / 'timed_visibility_1.png').stat().st_size > 30_000
+
+
+def test_every_format(target_csv, tmp_path):
+    from targetlist_generator import formats
+    plan, paths = make_targetlist(target_csv, tmp_path, outputs=list(formats.FORMATS), log=lambda s: None)
+    names = {p.name for p in paths}
+    for expected in ('targets_irtf.txt', 'targets_irtf_nostds.txt', 'targets_list.txt', 'targets_list.csv',
+                     'targets_list.vot', 'targets_keck.txt', 'targets_lick.txt', 'targets_eso_p2.txt',
+                     'targets_subaru_ope.txt', 'targets_mmt.cat', 'targets_magellan.cat', 'targets_cat_1.cat'):
+        assert expected in names
+    n = 2 * len(plan)  # each target followed by its standard
+    keck = (tmp_path / 'targets_keck.txt').read_text().splitlines()
+    assert len(keck) == n and all(len(line.split()) >= 8 and line[15] == ' ' for line in keck)
+    assert keck[0][16:27] == plan.pipe(io.sexagesimal, sep=' ', sign=True)[0][0]
+    assert all(len(line.split(', ')) == 5 for line in (tmp_path / 'targets_eso_p2.txt').read_text().splitlines())
+    subaru = (tmp_path / 'targets_subaru_ope.txt').read_text().splitlines()
+    assert all(re.fullmatch(r'\w+=OBJECT="[^"]+" RA=\d{6}\.\d{3} DEC=[+-]\d{6}\.\d{2} EQUINOX=2000\.0', s)
+               for s in subaru)
+    assert all(len(line.split()) == 8 for line in (tmp_path / 'targets_mmt.cat').read_text().splitlines())
+    magellan = (tmp_path / 'targets_magellan.cat').read_text().splitlines()
+    assert magellan[0].startswith('#') and all(len(line.split()) == 16 for line in magellan[1:])
+    assert len(Table.read(tmp_path / 'targets_list.vot')) == n
+    with pytest.raises(SystemExit):
+        cli.main(['make', str(target_csv), '-o', str(tmp_path), '--formats', 'irtf,nonsense'])
+
+
+def test_keck_proper_motion_units():
+    from targetlist_generator import formats
+    rows = pd.DataFrame({'dec': [60.0], 'pmra': [150.0], 'pmdec': [-300.0]})  # mas/yr, pmra with cos dec
+    pmra, pmdec = formats.time_pm(rows)
+    assert pmra[0] == pytest.approx(0.15 / 15 / 0.5) and pmdec[0] == pytest.approx(-0.3)
 
 
 @pytest.mark.network

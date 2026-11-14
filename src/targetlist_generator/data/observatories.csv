@@ -1,0 +1,110 @@
+name,aliases,lat,lon,height
+alma,ALMA;Atacama Large Millimeter Array,-23.029000,-67.755000,5000.0
+Anglo-Australian Observatory,aao,-31.277039,149.066086,1164.0
+Apache Point Observatory,Apache Point;apo,32.780000,-105.820000,2798.0
+Arecibo Observatory,ao;AO;Arecibo;arecibo,18.344167,-66.752778,497.0
+Astroparticle Research with Cosmics in the Abyss,arca;ARCA;KM3NeT ARCA;KM3NeT arca;km3net arca,36.266667,16.100000,-3500.0
+Australia Telescope Compact Array,atca;ATCA,-30.313900,149.564600,237.0
+Australian Square Kilometre Array Pathfinder,ASKAP;askap,-26.697000,116.631424,361.0
+Beijing XingLong Observatory,BAO,40.393333,117.575000,950.0
+Big Bear Solar Observatory,BBSO;bbso;NST,34.258300,-116.921400,2067.0
+Black Moshannon Observatory,bmo,40.921667,-78.005000,738.0
+Canada-France-Hawaii Telescope,cfht,19.826667,-155.471667,4215.0
+Canadian Hydrogen Intensity Mapping Experiment,chime;CHIME,49.320709,-119.623677,555.4
+Catalina Observatory: 61 inch telescope,Catalina Observatory;mtbigelow,32.416667,-110.731667,2510.0
+"Centro Astronomico Hispano-Aleman, Almeria",CAHA;Observatorio de Calar Alto,37.223611,-2.546111,2168.0
+Cerro Tololo Interamerican Observatory,Cerro Tololo;ctio,-30.165278,-70.815000,2215.0
+Cima Ekar 182 cm Telescope,Cima Ekar Observing Station;ekar;Mt. Ekar 182 cm Telescope,45.848589,11.581133,1413.0
+Daniel K. Inouye Solar Telescope,ATST;DKIST;dkist,20.706700,-156.256400,3067.0
+Devasthal Optical Telescope,DOT;dot,29.360982,79.684366,2424.0
+Dominion Astrophysical Observatory,dao,48.521667,-123.416667,229.0
+Dominion Radio Astrophysical Observatory,drao;DRAO;DRAO 26m Telescope;John Galt Telescope,49.321023,-119.618980,546.6
+Dwingeloo Radio Telescope,dwingeloo;dwl,52.812137,6.396346,70.3
+Effelsberg 100-m Radio Telescope,Effelsberg;effelsberg,50.524836,6.883616,416.7
+Five-hundred-meter Aperture Spherical radio Telescope,fast;FAST,25.652946,106.856666,1109.1
+gbt,GBT;Green Bank Observatory;Green Bank Telescope,38.433056,-79.839722,807.0
+Gemini North,gemini_north;gemn,19.823801,-155.469047,4213.0
+Gemini South,Cerro Pachon;gemini_south;gems,-30.240742,-70.736683,2750.0
+GEO600 Gravitational Wave Detector,G1;GEO;geo_600;GEO_600,52.245147,9.807193,114.4
+Giant Metrewave Radio Telescope,gmrt;GMRT,19.093003,74.056561,497.0
+Haleakala Observatories,haleakala,20.715520,-156.169000,3048.0
+Hat Creek Radio Observatory,Allen Telescope Array;ATA;Hat Creek;hcro,40.817431,-121.470736,1019.2
+Helium And Lead Observatory,HALO;halo,46.475000,-81.201111,-1740.0
+Hobby Eberly Telescope,HET;het,30.681389,-104.014722,2026.0
+Hyper-Kamiokande,hyperK;hyperk;Hyperk;HyperK,36.355583,137.313639,514.0
+IceCube Neutrino Observatory,icecube;ICECUBE;IceCube,-90.000000,0.000000,850.0
+Indian Astronomical Observatory,HCT;IAO;iao,32.779444,78.964167,4500.0
+James Clerk Maxwell Telescope,JCMT;jcmt,19.822800,-155.477000,4124.7
+Kamioka Gravitational Wave Detector,K1;KAGRA;kagra,36.411860,137.305956,414.2
+Kitt Peak National Observatory,Kitt Peak;kpno,31.963333,-111.600000,2120.0
+La Silla Observatory (ESO),La Silla Observatory;lasilla,-29.256667,-70.730000,2347.0
+Large Binocular Telescope,lbt;Mount Graham International Observatory;Mt Graham,32.701600,-109.871900,2902.0
+Las Campanas Observatory,lco,-29.003333,-70.701667,2282.0
+Lick Observatory,lick,37.343333,-121.636667,1290.0
+LIGO Hanford Observatory,H1;LHO;LHO_4k;lho_4k,46.455147,-119.407657,142.6
+LIGO Livingston Observatory,L1;LLO;llo_4k;LLO_4k,30.562894,-90.774240,-6.6
+Lijiang Observatory,GMG;Lijiang,26.695100,100.030000,3200.0
+Long Wavelength Array 1,lwa1;LWA1,34.068900,-107.627670,2127.0
+Low-Frequency Array,LOFAR;lofar,52.915119,6.869833,49.4
+Lowell Discovery Telescope,dct;DCT;Discovery Channel Telescope;Happy Jack;LDT;ldt,34.744305,-111.422515,2337.0
+Lowell Observatory - Anderson Mesa,Anderson Mesa;lo-am;lowell;Lowell Observatory;Navy Precision Optical Interferometer;NPOI;Perkins;pto;PTO,35.096667,-111.535000,2198.0
+Lowell Observatory - Mars Hill,lo-mh;Mars Hill;mars_hill;mh,35.202875,-111.664781,2195.0
+Manastash Ridge Observatory,mro,46.952800,-120.727800,1198.0
+McDonald Observatory,mcdonald,30.671667,-104.021667,2075.0
+MDM Observatory,mdm;Michigan-Dartmouth-MIT Observatory,31.950000,-111.616667,1938.0
+Medicina Radio Telescope,Medicina;medicina;Medicina Dish,44.520500,11.646900,25.0
+MeerKAT,MEERKAT;meerkat,-30.711056,21.443889,1086.6
+Mount Laguna Observatory,MLO;mlo;Mount Laguna,32.842200,-116.426900,1859.0
+Mount Wilson Observatory,CHARA;mwo,34.222580,-118.061684,1742.0
+Mt. Stromlo Observatory,mso,-35.320650,149.024333,767.0
+Multiple Mirror Telescope,mmt,31.688333,-110.885000,2608.0
+Murchison Widefield Array,MWA;mwa,-26.703319,116.670815,377.8
+Nancay Radio Telescope,nancay;Nancay;NANCAY,47.373602,2.197478,190.9
+NASA Infrared Telescope Facility,irtf,19.826218,-155.471999,4168.0
+National Observatory of Venezuela,NOV,8.790000,-70.866667,3610.0
+Noto Radio Telescope,Noto;noto,36.875850,14.988900,30.0
+NuMI Off-axis νe Appearance,nova;NOvA;NOVA,48.378629,-92.831135,367.6
+Observatoire de Haute Provence,ohp,43.930833,5.713333,650.0
+Observatoire du Mont Mégantic,Mont Mégantic Observatory;OMM;omm,45.455711,-71.152500,1108.0
+Observatoire SIRENE,sirene,44.000000,5.486944,1100.0
+Observatorio Astrofisico de Javalambre,OAJ,40.042019,-1.016083,1956.0
+Observatorio Astronomico de La Plata,La Plata Astronomical Observatory;oalp;OALP,-34.908472,-57.932722,16.0
+"Observatorio Astronomico Nacional, San Pedro Martir",spm,31.029167,-115.486944,2830.0
+"Observatorio Astronomico Nacional, Tonantzintla",tona,19.032778,-98.313889,0.0
+"Observatorio Astronomico Ramon Maria Aller, Santiago de Compostela",OARMA;Observatorio Ramon Maria Aller,42.875940,-8.555450,240.0
+Observatorio Cerro Armazones,Cerro Armazones Observatory;oca;OCA,-24.598670,-70.201280,2817.0
+Observatorio Ckoirama,ckoirama;Ckoirama;Ckoirama Observatory,-24.089332,-69.930624,965.0
+"Observatorio del Teide, Tenerife",Observatorio del Teide;OT;teide,28.300000,-16.509722,2390.0
+Okayama Astrophysical Observatory,OAO,34.577075,133.593956,370.0
+Oscillation Research with Cosmics in the Abyss,KM3NeT ORCA;km3net orca;KM3NeT orca;ORCA;orca,42.800000,6.033333,-2450.0
+Otehiwai Observatory,MJO;MOA;Mt John;Otehiwai,-43.985741,170.465062,1029.0
+Owens Valley Radio Observatory,mma;ovro,37.233387,-118.283405,1188.6
+Paranal Observatory (ESO),Cerro Paranal;paranal;Paranal Observatory,-24.627439,-70.404987,2669.0
+Parkes,Murriyang;parkes,-32.998406,148.263510,414.8
+"Roque de los Muchachos, La Palma",lapalma;Roque de los Muchachos,28.758333,-17.880000,2327.0
+Royal Observatory Greenwich,example_site;greenwich,51.477811,-0.001475,46.0
+Rubin Auxiliary Telescope,LSST 1.4m;LSST AuxTel;Rubin AuxTel;Rubin:1.2m;rubin_aux;rubin_auxtel,-30.244797,-70.747722,2647.0
+Sacramento Peak Observatory,Sac Peak;Sacramento Peak;spo;SPO;Sunspot,32.787300,-105.820500,2800.0
+Sardinia Radio Telescope,SRT;srt,39.493072,9.245151,671.7
+Siding Spring Observatory,sso,-31.273361,149.061194,1149.0
+Simonyi Survey Telesope,LSST;LSST 8.4m;Rubin;rubin;Rubin Observatory;Rubin:Simonyi;rubin_simonyi;rubin_sst;Simonyi Survey Telescope,-30.244633,-70.749417,2662.8
+SKA-Low,ska low;SKA Low;SKA-LOW;ska-low;skalow,-26.824722,116.764448,365.0
+SKA-Mid,ska mid;SKA Mid;SKA-MID;ska-mid;skamid,-30.712925,21.443803,1096.0
+Southern African Large Telescope,SAAO;SALT;salt;Sutherland,-32.375823,20.810808,1798.0
+Sub-millimeter Array,SMA;sma,19.824220,-155.477550,4125.1
+Subaru Telescope,Subaru,19.825556,-155.476111,4139.0
+Sudbury Neutrino Observatory +,sno+;SNO+,46.475000,-81.201111,-1740.0
+Super-Kamiokande,Superk;SuperK;superk;superK,36.425722,137.310306,370.0
+Thai National Observatory,TNO,18.590556,98.486667,2457.0
+The Hale Telescope,Hale Telescope;Palomar,33.356000,-116.863000,1706.0
+TUBITAK National Observatory,tug;TUG,36.824166,30.335555,2500.0
+United Kingdom Infrared Telescope,UKIRT;ukirt,19.822431,-155.470328,4198.5
+Vainu Bappu Observatory,vbo,12.576660,78.826600,725.0
+Virgo Observatory,V1;virgo;Virgo;VIRGO,43.631414,10.504497,51.9
+vla,Jansky Very Large Array;Very Large Array,34.078749,-107.618283,2124.0
+W. M. Keck Observatory,keck;Keck Observatory,19.828333,-155.478333,4160.0
+Wendelstein Observatory,wendelstein;Wendelstein,47.703639,12.012056,1838.0
+Whipple Observatory,flwo;Whipple,31.680944,-110.877500,2320.0
+Winer Observatory,Winer;winer,31.665578,-110.601783,1515.7
+Wise Observatory,wise,30.597390,34.762180,875.0
+WIYN Observatory,WIYN;wiyn;WIYN 3.5 m,31.958050,-111.600619,2091.0

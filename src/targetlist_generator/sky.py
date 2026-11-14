@@ -1,44 +1,80 @@
 """Night window and target visibility from an observatory site, plus plain RA/Dec box cuts."""
+from difflib import get_close_matches
+from functools import cache
+from importlib.resources import files
+
 import astropy.units as u
 import numpy as np
+import pandas as pd
 from astropy.coordinates import FK5, AltAz, Angle, EarthLocation, SkyCoord, get_sun
 from astropy.time import Time
 from astropy.utils import iers
 
 STEP = 5 * u.min  # time resolution of the night grid
+OBSERVATORIES = files(__package__) / 'data' / 'observatories.csv'  # snapshot of astropy's site registry
+
+
+@cache
+def observatories() -> pd.DataFrame:
+    """Bundled observatories: name, aliases (';'-separated), lat, lon [deg, east +], height [m]."""
+    return pd.read_csv(OBSERVATORIES, keep_default_na=False)
+
+
+def find_site(site: str) -> pd.Series:
+    """Observatory row by name or alias, case-insensitive; unknown names raise with the closest matches."""
+    sites = observatories()
+    keys = {n.lower(): i for i, row in sites.iterrows()
+            for n in [row['name'], *filter(None, row['aliases'].split(';'))]}
+    if site.strip().lower() not in keys:
+        close = get_close_matches(site.strip().lower(), keys, n=5, cutoff=0.5)
+        raise ValueError(f'Unknown observatory {site!r}' + (f'; did you mean {close}?' if close else '')
+                         + ' Give --lat/--lon instead for a site not in the list.')
+    return sites.loc[keys[site.strip().lower()]]
 
 
 def site_location(site: str | None = None, lat: float | None = None, lon: float | None = None) -> EarthLocation:
-    """Observatory from an astropy site name (e.g. 'lapalma', 'irtf') or decimal-degree latitude/longitude."""
+    """Observatory from a bundled site name or alias (e.g. 'lapalma', 'irtf') or decimal-degree latitude/longitude."""
     if site and (lat is not None or lon is not None):
         raise ValueError('Give either a site name or latitude/longitude, not both')
     if site:
-        return EarthLocation.of_site(site)
+        row = find_site(site)
+        return EarthLocation.from_geodetic(row['lon'] * u.deg, row['lat'] * u.deg, row['height'] * u.m)
     if lat is None or lon is None:
         raise ValueError('Need a site name, or both latitude and longitude (decimal degrees, east positive)')
     return EarthLocation.from_geodetic(lon * u.deg, lat * u.deg)
 
 
-def night_times(date: str, location: EarthLocation, twilight: float = -12.0) -> Time:
-    """Times (``STEP`` apart) during the night starting on the evening of ``date`` with the Sun below ``twilight``."""
+def day_grid(date: str, location: EarthLocation) -> tuple[Time, np.ndarray]:
+    """``STEP`` grid over the 24 h from local noon of ``date``, and the Sun's altitude [deg] on it."""
     local_noon = Time(date) + (12 - location.lon.to_value(u.deg) / 15) * u.h
     grid = local_noon + np.arange(0, 24 * 60, STEP.to_value(u.min)) * u.min
     with iers.conf.set_temp('auto_download', False):  # minute precision is plenty; works offline at the telescope
-        sun_alt = get_sun(grid).transform_to(AltAz(obstime=grid, location=location)).alt
-    night = grid[sun_alt < twilight * u.deg]
+        sun_alt = get_sun(grid).transform_to(AltAz(obstime=grid, location=location)).alt.deg
+    return grid, sun_alt
+
+
+def night_times(date: str, location: EarthLocation, twilight: float = -12.0) -> Time:
+    """Times (``STEP`` apart) during the night starting on the evening of ``date`` with the Sun below ``twilight``."""
+    grid, sun_alt = day_grid(date, location)
+    night = grid[sun_alt < twilight]
     if len(night) == 0:
         raise ValueError(f'The Sun never sets below {twilight} deg on {date} at this site')
     return night
 
 
-def airmass(ra: np.ndarray, dec: np.ndarray, times: Time, location: EarthLocation) -> np.ndarray:
-    """Plane-parallel airmass (inf below the horizon), shape (len(times), len(ra)); ra, dec in degrees."""
+def altitude(ra: np.ndarray, dec: np.ndarray, times: Time, location: EarthLocation) -> np.ndarray:
+    """Geometric altitude [deg], shape (len(times), len(ra)); ra, dec in degrees (J2000, precessed to date)."""
     with iers.conf.set_temp('auto_download', False):
         lst = times.sidereal_time('apparent', longitude=location.lon).deg
-    now = SkyCoord(np.asarray(ra) * u.deg, np.asarray(dec) * u.deg).transform_to(FK5(equinox=times[0]))  # precess
+    now = SkyCoord(np.asarray(ra) * u.deg, np.asarray(dec) * u.deg).transform_to(FK5(equinox=times[0]))
     hour_angle = np.radians(lst[:, None] - now.ra.deg[None, :])
     lat, dec = location.lat.rad, now.dec.rad[None, :]
-    sin_alt = np.sin(lat) * np.sin(dec) + np.cos(lat) * np.cos(dec) * np.cos(hour_angle)
+    return np.degrees(np.arcsin(np.sin(lat) * np.sin(dec) + np.cos(lat) * np.cos(dec) * np.cos(hour_angle)))
+
+
+def airmass(ra: np.ndarray, dec: np.ndarray, times: Time, location: EarthLocation) -> np.ndarray:
+    """Plane-parallel airmass (inf below the horizon), shape (len(times), len(ra)); ra, dec in degrees."""
+    sin_alt = np.sin(np.radians(altitude(ra, dec, times, location)))
     with np.errstate(divide='ignore'):
         return np.where(sin_alt > 0, 1 / sin_alt, np.inf)
 

@@ -27,23 +27,28 @@ def load_standards(mag_col: str, band: str = 'K', spt: str | None = None, path: 
     return normalise(raw, mag_col, source=str(path or BUNDLED))
 
 
-def matched_standards(targets: pd.DataFrame, standards: pd.DataFrame, times, location, offset: float = 30.0,
-                      tol: float = 0.1) -> tuple[pd.DataFrame, int]:
-    """Row per target: among standards whose airmass ``offset`` minutes after the target's best (minimum-airmass)
-    time is within ``tol`` of the target's, the nearest on the sky; with none within ``tol``, the closest in
-    airmass. Also returns how many targets had no standard within ``tol``."""
-    t_am = sky.airmass(targets['ra'].to_numpy(), targets['dec'].to_numpy(), times, location)  # (T, N)
-    s_am = sky.airmass(standards['ra'].to_numpy(), standards['dec'].to_numpy(), times, location)  # (T, S)
-    best = t_am.argmin(axis=0)
-    later = np.clip(best + round(offset / sky.STEP.to_value(u.min)), 0, len(times) - 1)  # stays inside the night
+def pick(targets: pd.DataFrame, stds: pd.DataFrame, times, location, std_at: np.ndarray, target_am: np.ndarray,
+         tol: float = 0.1, max_sep: float = 20.0) -> tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
+    """Standard per target, observed at grid index ``std_at``: nearest on the sky among those within ``max_sep``
+    deg and within ``tol`` of the target's airmass ``target_am``; else the closest in airmass within ``max_sep``;
+    else (none within ``max_sep`` above the horizon) the nearest on the sky, noted. Small slews beat perfect
+    airmass matches, so a standard is never taken from across the sky while a nearby one exists.
+    Returns (standards, notes, standard airmass, separation [deg])."""
+    s_am = sky.airmass(stds['ra'].to_numpy(), stds['dec'].to_numpy(), times, location)[std_at]  # (N, S)
     with np.errstate(invalid='ignore'):  # inf - inf below the horizon -> nan, never a candidate
-        diff = np.abs(s_am[later] - t_am[best, np.arange(len(targets))][:, None])  # (N, S)
-    diff = np.nan_to_num(diff, nan=np.inf)
-    sep = coords(targets)[:, None].separation(coords(standards)[None, :]).deg
-    choice = np.argmin(np.where(diff <= tol, sep, np.inf), axis=1)
-    none = ~(diff <= tol).any(axis=1)
-    choice[none] = np.argmin(diff[none], axis=1)
-    return standards.iloc[choice].reset_index(drop=True), int(none.sum())
+        diff = np.nan_to_num(np.abs(s_am - np.asarray(target_am)[:, None]), nan=np.inf)
+    sep = coords(targets)[:, None].separation(coords(stds)[None, :]).deg
+    near = (sep <= max_sep) & np.isfinite(diff)
+    match = near & (diff <= tol)
+    choice = np.argmin(np.where(match, sep, np.inf), axis=1)
+    loose = ~match.any(axis=1)
+    choice[loose] = np.argmin(np.where(near, diff, np.inf), axis=1)[loose]
+    far = ~near.any(axis=1)
+    choice[far] = np.argmin(sep, axis=1)[far]
+    notes = np.where(far, f'no standard above the horizon within {max_sep:g} deg',
+                     np.where(loose, f'no standard within {tol:g} airmass', ''))
+    rows = np.arange(len(targets))
+    return stds.iloc[choice].reset_index(drop=True), notes, s_am[rows, choice], sep[rows, choice]
 
 
 def coords(df: pd.DataFrame) -> SkyCoord:

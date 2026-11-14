@@ -1,14 +1,14 @@
-"""Per-target timing for one night, the Moon, and the airmass plot."""
+"""The Moon and the night's visibility plots."""
 from pathlib import Path
 
 import astropy.units as u
 import matplotlib.dates as mdates
 import numpy as np
 import pandas as pd
-from astropy.coordinates import SkyCoord, get_body, get_sun
+from astropy.coordinates import AltAz, SkyCoord, get_body, get_sun
 from astropy.time import Time
 from astropy.utils import iers
-from matplotlib import colormaps, rc_context
+from matplotlib import rc_context
 from matplotlib.figure import Figure
 
 from . import sky
@@ -30,40 +30,75 @@ def moon_separation(targets: pd.DataFrame, body: SkyCoord) -> np.ndarray:
         return body.separation(stars.transform_to(body.frame)).deg
 
 
-def timing(targets: pd.DataFrame, times: Time, location, max_airmass: float) -> pd.DataFrame:
-    """best_utc (minimum airmass), min_airmass and the first/last UTC at airmass <= ``max_airmass``."""
-    am = sky.airmass(targets['ra'].to_numpy(), targets['dec'].to_numpy(), times, location)
-    up = am <= max_airmass
-    iso = np.array([t[:16] for t in times.iso])
-    first, last = up.argmax(axis=0), len(times) - 1 - up[::-1].argmax(axis=0)
-    never = ~up.any(axis=0)
-    return pd.DataFrame({'best_utc': iso[am.argmin(axis=0)], 'min_airmass': am.min(axis=0).round(3),
-                         'start_utc': np.where(never, '', iso[first]), 'end_utc': np.where(never, '', iso[last])})
+def moon_limit(setting: str | float, illumination: float) -> float:
+    """Minimum Moon separation [deg]: 'auto' = 10 + 30 x illumination (10 at new, 40 at full), 'off' = 0, or a
+    number of degrees."""
+    if setting == 'auto':
+        return 10 + 30 * illumination
+    if setting == 'off':
+        return 0.0
+    value = float(setting)
+    if not 0 <= value <= 180:
+        raise ValueError(f'Moon separation must be auto, off or 0-180 deg, not {setting!r}')
+    return value
 
 
-def airmass_plot(targets: pd.DataFrame, times: Time, location, max_airmass: float, path: Path) -> Path:
-    """Airmass against UTC for every target, coloured by time of best airmass, names at their minima."""
-    am = sky.airmass(targets['ra'].to_numpy(), targets['dec'].to_numpy(), times, location)
-    rank = np.argsort(np.argsort(am.argmin(axis=0), kind='stable'), kind='stable')  # by time of best airmass
-    colours = colormaps['viridis'](np.linspace(0, 0.9, am.shape[1]))[rank]
-    am[am > max_airmass + 0.5] = np.nan
+PER_PLOT = 10  # targets per visibility plot, as in the ING .cat lists
+COLOURS = ('black', '#004488', '#DDAA33')  # colour-blind safe, then cycled through line styles
+STYLES = ('-', '--', '-.', ':')
+
+
+def visibility_plots(plan: pd.DataFrame, date: str, location, max_airmass: float, title: str,
+                     stem: Path) -> list[Path]:
+    """ING-style visibility plots, ``PER_PLOT`` targets each (``<stem>_visibility_N.png``): altitude against UTC
+    from sunset to sunrise with an airmass axis, twilight shading (darker grey = brighter sky), the Moon (grey
+    dotted) and each target's planned block drawn thick."""
+    grid, sun = sky.day_grid(date, location)
+    up = np.flatnonzero(sun < 0)
+    span = slice(max(up[0] - 6, 0), min(up[-1] + 7, len(grid)))  # 30 min either side of sunset/sunrise
+    times, sun = grid[span], sun[span]
     when = times.datetime
-    with rc_context({'font.family': 'serif'}):
-        fig = Figure(figsize=(8, 5))
-        ax = fig.add_subplot()
-        for i, name in enumerate(targets['shortname']):
-            ax.plot(when, am[:, i], color=colours[i], lw=1)
-            if np.isfinite(am[:, i]).any():
-                j = np.nanargmin(am[:, i])
-                ax.annotate(name, (when[j], am[j, i]), xytext=(0, -3), textcoords='offset points',
-                            ha='center', va='top', fontsize=6, color=colours[i])
-        ax.axhline(max_airmass, color='black', ls='--', lw=1)
-        ax.set_ylim(max_airmass + 0.3, 0.95)
-        ax.set_xlim(when[0], when[-1])
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-        ax.minorticks_on()
-        ax.tick_params(which='both', direction='in', top=True, right=True)
-        ax.set_xlabel(f'UTC from {times[0].iso[:10]} [h]')
-        ax.set_ylabel('Airmass')
-        fig.savefig(path, dpi=150, bbox_inches='tight')
-    return path
+    iso = np.array([t[:16] for t in times.iso])
+    with iers.conf.set_temp('auto_download', False):
+        moon_alt = get_body('moon', times, location).transform_to(AltAz(obstime=times, location=location)).alt.deg
+    alt_all = sky.altitude(plan['ra'].to_numpy(), plan['dec'].to_numpy(), times, location)
+    limit_alt = np.degrees(np.arcsin(1 / max_airmass))
+    paths = []
+    for k, start in enumerate(range(0, len(plan), PER_PLOT), 1):
+        chunk = plan.iloc[start:start + PER_PLOT]
+        with rc_context({'font.family': 'serif'}):
+            fig = Figure(figsize=(9, 5.5))
+            ax = fig.add_subplot()
+            for level in (-18, -12, -6, 0):
+                ax.fill_between(when, 0, 90, where=sun > level, color='grey', alpha=0.12, lw=0)
+            ax.plot(when, moon_alt, color='grey', ls=':', lw=1.5, label='Moon')
+            ax.axhline(limit_alt, color='grey', ls='--', lw=0.8)
+            for j, row in enumerate(chunk.itertuples()):
+                style = {'color': COLOURS[j % 3], 'ls': STYLES[j // 3 % 4]}
+                alt = alt_all[:, start + j]
+                ax.plot(when, alt, lw=0.9, **style)
+                block = (iso >= row.target_start) & (iso <= row.target_end)
+                ax.plot(when[block], alt[block], lw=3.5, solid_capstyle='butt', **style)
+                if block.any():
+                    m = np.flatnonzero(block)[block.sum() // 2]
+                    ax.annotate(row.shortname, (when[m], alt[m]), xytext=(0, 6), textcoords='offset points',
+                                ha='center', fontsize=7, color=style['color'])
+            ax.set_ylim(0, 90)
+            ax.set_xlim(when[0], when[-1])
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            ax.minorticks_on()
+            ax.tick_params(which='both', direction='in', top=True)
+            to_am = (lambda a: 1 / np.sin(np.radians(np.clip(a, 1, 90))),
+                     lambda x: np.degrees(np.arcsin(1 / np.clip(x, 1, None))))
+            right = ax.secondary_yaxis('right', functions=to_am)
+            right.set_ticks([1.0, 1.1, 1.2, 1.5, 2.0, 3.0])
+            right.tick_params(direction='in')
+            right.set_ylabel('Airmass')
+            ax.set_xlabel(f'UTC from {times[0].iso[:10]} [h]')
+            ax.set_ylabel('Altitude [deg]')
+            ax.set_title(f'{title}, night of {date}' + (f' ({k})' if len(plan) > PER_PLOT else ''))
+            ax.legend(loc='upper right', fontsize=7, frameon=False)
+            path = stem.with_name(f'{stem.name}_visibility_{k}.png')
+            fig.savefig(path, dpi=150, bbox_inches='tight')
+        paths.append(path)
+    return paths
