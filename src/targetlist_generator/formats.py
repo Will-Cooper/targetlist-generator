@@ -1,8 +1,9 @@
 """Target-list writers for telescopes and tools. Each takes the targets in observing order, the paired standards
 (one row per target, or None) and the magnitude column, and returns the written paths.
 
-Input proper motions are mas/yr with pmra including cos(dec), as in Gaia; each writer converts to its format's
-units. Coordinates are written at the catalogue epoch with equinox J2000."""
+Input proper motions are mas/yr with pmra including cos(dec), as in Gaia. Keck, MMT and Magellan convert them to
+their documented units; Lick and ESO omit them (cos dec convention unstated); IRTF copies them unchanged (units not
+confirmed, see ``irtf``). Coordinates are written at the catalogue epoch with equinox J2000."""
 from collections.abc import Callable
 from pathlib import Path
 
@@ -49,7 +50,9 @@ def clean_names(names: pd.Series, disallowed: str | None, fmt: str, max_len: int
 
 
 def irtf(stem: Path, targets, stds, mag_col) -> list[Path]:
-    """IRTF starcat lists: ``_irtf.txt`` with standards (when given) and ``_irtf_nostds.txt``."""
+    """IRTF starcat lists: ``_irtf.txt`` with standards (when given) and ``_irtf_nostds.txt``, in the version 1
+    layout. pmra/pmdec are copied from the table unchanged: the units the StarCat expects (IRTF TCS3 StarCat user
+    guide, 'Userlist v3 text format') could not be confirmed, so check them before relying on proper motions."""
     def write(path: Path, rows: pd.DataFrame) -> Path:
         out = formatted(rows, mag_col)
         out.index = np.arange(1, len(out) + 1)

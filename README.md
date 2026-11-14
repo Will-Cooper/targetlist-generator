@@ -99,7 +99,8 @@ Plus the formats chosen with `--formats` (default `irtf,cat,csv`), each listing 
 | `mmt` | `<name>_mmt.cat` | MMT catalogue |
 | `magellan` | `<name>_magellan.cat` | Magellan catalogue (rotator set to `0.0 OFF` and no guide stars: edit for your instrument) |
 
-Each writer follows its observatory's published format and converts proper motions to its units; the Lick and ESO lists leave proper motions out because their documentation does not say whether RA proper motion includes cos(Dec).
+Each writer follows its observatory's published format.
+Proper motions: the Keck, MMT and Magellan writers convert them to those telescopes' units; the Lick and ESO lists leave them out because their documentation does not say whether RA proper motion includes cos(Dec); the IRTF list copies the table's `pmra`/`pmdec` values unchanged, as version 1 did, because the units the IRTF StarCat expects could not be confirmed here, so check them against the StarCat user guide before relying on proper motions there.
 Characters a format does not allow are removed from names (e.g. `* 42 Leo` becomes `42 Leo` for ESO).
 Palomar and Gemini OT lists are not offered yet, as their target-list formats could not be confirmed from public documentation.
 
