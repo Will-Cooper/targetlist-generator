@@ -34,7 +34,7 @@ def fetch_cutout(ra: float, dec: float, survey: str, fov: float, urls: tuple[str
     raise OSError('No hips2fits service answered: ' + '; '.join(errors))
 
 
-def plot_finder(hdu: fits.PrimaryHDU, name: str, survey: str, fov: float, path: Path) -> Path:
+def finder_figure(hdu: fits.PrimaryHDU, name: str, survey: str, fov: float) -> Figure:
     """Inverted greyscale chart with a centre reticle and N/E arrows."""
     fig = Figure(figsize=(6, 6))
     ax = fig.add_subplot(projection=WCS(hdu.header))
@@ -52,8 +52,7 @@ def plot_finder(hdu: fits.PrimaryHDU, name: str, survey: str, fov: float, path: 
     ax.set_xlabel('Right Ascension')
     ax.set_ylabel('Declination')
     ax.set_title(f'{name}   {survey}   {fov:g} arcmin')
-    fig.savefig(path, dpi=150, bbox_inches='tight')
-    return path
+    return fig
 
 
 def chart_path(out_dir: Path, name: str, fov: float) -> Path:
@@ -78,13 +77,19 @@ def aladin_charts(items: list[tuple[float, float, Path]], survey: str, fov: floa
 
 
 def make_finders(items: list[tuple[str, float, float]], out_dir: Path, survey: str = SURVEYS[0], fov: float = 2.0,
-                 urls: tuple[str, ...] = HIPS2FITS, log=print) -> tuple[list[Path], list[str]]:
+                 urls: tuple[str, ...] = HIPS2FITS, log=print, show=None,
+                 progress=None) -> tuple[list[Path], list[str]]:
     """Charts for (name, ra, dec) items into ``out_dir``; returns (written paths, failed names).
     hips2fits first; from the first target no hips2fits service answers for, the rest go to one Aladin session
-    (an "aladin" command on PATH) instead of retrying dead services per target."""
+    (an "aladin" command on PATH) instead of retrying dead services per target.
+    ``show(name, figure_or_png_path)`` is called as each chart is made; ``progress(message, done, total)``
+    reports progress (total 0 while busy with no count)."""
+    show = show or (lambda name, item: None)
+    progress = progress or (lambda message, done, total: None)
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = []
     for k, (name, ra, dec) in enumerate(items):
+        progress(f'Finder chart {k + 1} of {len(items)}', k, len(items))
         try:
             hdu = fetch_cutout(ra, dec, survey, fov, urls)
         except OSError as err:
@@ -95,13 +100,21 @@ def make_finders(items: list[tuple[str, float, float]], out_dir: Path, survey: s
                 log('Install Aladin (an "aladin" command on PATH) to draw charts from HiPS mirrors instead')
                 return paths, [n for n, _, _ in rest]
             log(f'Drawing {len(rest)} charts in one Aladin session from {MIRRORS.get(survey, survey)}')
+            progress(f'Drawing {len(rest)} finder charts with Aladin (CDS is unavailable); this can take a few '
+                     'minutes', 0, 0)
             wanted = {n: chart_path(out_dir, n, fov) for n, _, _ in rest}
             try:
                 made = aladin_charts([(r, d, wanted[n]) for n, r, d in rest], survey, fov, aladin)
             except OSError as aladin_err:
                 log(f'Aladin failed: {aladin_err}')
                 made = []
+            for n, path in wanted.items():
+                if path in made:
+                    show(n, path)
             return paths + made, [n for n, p in wanted.items() if p not in made]
-        paths.append(plot_finder(hdu, name, survey, fov, chart_path(out_dir, name, fov)))
+        fig = finder_figure(hdu, name, survey, fov)
+        fig.savefig(chart_path(out_dir, name, fov), dpi=150, bbox_inches='tight')
+        paths.append(chart_path(out_dir, name, fov))
+        show(name, fig)
         log(f'Finder chart: {paths[-1].name}')
     return paths, []

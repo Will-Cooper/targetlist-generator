@@ -17,7 +17,9 @@ EPILOG = """examples:
 Negative values work as plain numbers (-d -30 60); for negative sexagesimal strings use degrees instead."""
 
 
-def formats_arg(value: str) -> list[str]:
+def formats_arg(value: str) -> list[str] | None:
+    if value == 'auto':
+        return None
     keys = [k.strip() for k in value.split(',') if k.strip()]
     unknown = sorted(set(keys) - set(formats.FORMATS))
     if unknown:
@@ -74,9 +76,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help='standard within this airmass of the target when possible (default: %(default)s)')
     std.add_argument('--std-max-sep', type=float, default=20.0,
                      help='standard within this many deg of the target when possible (default: %(default)s)')
-    make.add_argument('--formats', type=formats_arg, default=list(formats.DEFAULT),
+    make.add_argument('--formats', type=formats_arg, default=None,
                       help=f'comma-separated output formats from {", ".join(formats.FORMATS)} '
-                           f'(default: {",".join(formats.DEFAULT)})')
+                           '(default: auto = the observatory\'s own format, else csv)')
     make.add_argument('--finders', action='store_true', help='also make finder charts for every listed target')
 
     fc = sub.add_parser('finder', parents=[common], help='finder charts for named targets in the list')

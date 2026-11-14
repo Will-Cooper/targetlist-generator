@@ -49,10 +49,10 @@ STYLES = ('-', '--', '-.', ':')
 
 
 def visibility_plots(plan: pd.DataFrame, date: str, location, max_airmass: float, title: str,
-                     stem: Path) -> list[Path]:
+                     stem: Path, show=None) -> list[Path]:
     """ING-style visibility plots, ``PER_PLOT`` targets each (``<stem>_visibility_N.png``): altitude against UTC
     from sunset to sunrise with an airmass axis, twilight shading (darker grey = brighter sky), the Moon (grey
-    dotted) and each target's planned block drawn thick."""
+    dotted) and each target's planned block drawn thick. ``show(name, figure)`` gets each figure too."""
     grid, sun = sky.day_grid(date, location)
     up = np.flatnonzero(sun < 0)
     span = slice(max(up[0] - 6, 0), min(up[-1] + 7, len(grid)))  # 30 min either side of sunset/sunrise
@@ -101,4 +101,6 @@ def visibility_plots(plan: pd.DataFrame, date: str, location, max_airmass: float
             path = stem.with_name(f'{stem.name}_visibility_{k}.png')
             fig.savefig(path, dpi=150, bbox_inches='tight')
         paths.append(path)
+        if show is not None:
+            show(path.stem, fig)
     return paths

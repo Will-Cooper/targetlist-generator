@@ -12,6 +12,7 @@ import pandas as pd
 from astropy.table import Table
 
 from .io import formatted, sexagesimal
+from .sky import find_site
 
 CAT_CHUNK = 10  # targets per ING .cat file
 RULE = '#+-----+-----+-----+-----+-----+-----+-----+-----+-------+'
@@ -203,7 +204,27 @@ FORMATS: dict[str, tuple[str, Writer]] = {
     'mmt': ('MMT catalogue', mmt),
     'magellan': ('Magellan catalogue', magellan),
 }
-DEFAULT = ('irtf', 'cat', 'csv')
+SITE_FORMATS = {  # bundled observatory name -> the list format its telescopes read
+    'NASA Infrared Telescope Facility': ('irtf',),
+    'W. M. Keck Observatory': ('keck',),
+    'Lick Observatory': ('lick',),
+    'Paranal Observatory (ESO)': ('eso',),
+    'La Silla Observatory (ESO)': ('eso',),
+    'Subaru Telescope': ('subaru',),
+    'Multiple Mirror Telescope': ('mmt',),
+    'Las Campanas Observatory': ('magellan',),
+    'Roque de los Muchachos, La Palma': ('cat',),
+}
+
+
+def defaults(site: str | None = None, from_samp: bool = False) -> tuple[str, ...]:
+    """Formats to write when none are chosen: the observatory's own list format, else a VOTable for a table
+    that came from TOPCAT (SAMP), else CSV. ``site`` is a bundled observatory name or alias."""
+    if site:
+        name = find_site(site)['name']
+        if name in SITE_FORMATS:
+            return SITE_FORMATS[name]
+    return ('votable',) if from_samp else ('csv',)
 
 
 def write(keys, stem: Path, targets: pd.DataFrame, stds: pd.DataFrame | None, mag_col: str) -> list[Path]:

@@ -73,13 +73,19 @@ def make_targetlist(target_list: str | Path, out_dir: str | Path, mag_col: str =
                     target_time: float = 30.0, target_time_col: str | None = None, cal_time: float = 5.0,
                     with_standards: bool = True, standards_file: str | Path | None = None, std_band: str = 'K',
                     std_spt: str | None = None, std_time: float = 10.0, std_airmass_tol: float = 0.1,
-                    std_max_sep: float = 20.0, outputs: Iterable[str] = formats.DEFAULT, finders: bool = False,
+                    std_max_sep: float = 20.0, outputs: Iterable[str] | None = None, finders: bool = False,
                     survey: str = finder.SURVEYS[0], fov: float = 2.0, urls: tuple[str, ...] = finder.HIPS2FITS,
-                    log: Log = print, **cuts) -> tuple[pd.DataFrame, list[Path]]:
+                    log: Log = print, show=None, progress=None, **cuts) -> tuple[pd.DataFrame, list[Path]]:
     """Cut ``target_list`` (``cuts`` go to ``cut_targets``), plan the night when a date is given, pair standards
-    and write into ``out_dir``: the chosen ``outputs`` (see ``formats.FORMATS``), with a night also
+    and write into ``out_dir``: the chosen ``outputs`` (see ``formats.FORMATS``; None = ``formats.defaults`` for the
+    site), with a night also
     ``<stem>_plan.csv`` and ``<stem>_visibility_N.png``, and optionally ``fcharts/*.png``.
-    Returns the plan (or the kept targets without a night) and the written paths."""
+    ``show(kind, name, item)`` receives each visibility figure (kind "visibility") and finder chart (kind
+    "finder": a Figure, or a PNG path when drawn by Aladin) as it is made; ``progress(message, done, total)``
+    reports the current stage (total 0 while busy). Returns the plan (or the kept targets without a night)
+    and the written paths."""
+    progress = progress or (lambda message, done, total: None)
+    progress('Planning the night', 0, 0)
     out_dir = Path(out_dir)
     mag_col = mag_col.lower()
     targets = io.read_targets(target_list, mag_col, keep=(target_time_col,) if target_time_col else ())
@@ -102,30 +108,34 @@ def make_targetlist(target_list: str | Path, out_dir: str | Path, mag_col: str =
             log(f'{(rows["std_note"] != "").sum()} standards are compromises: see std_note in the plan')
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = out_dir / Path(target_list).stem
-    paths = formats.write(list(outputs), stem, rows, paired, mag_col)
+    keys = list(outputs) if outputs is not None else list(formats.defaults(cuts.get('site')))
+    paths = formats.write(keys, stem, rows, paired, mag_col)
     if night is not None:
         plan_path = stem.with_name(f'{stem.name}_plan.csv')
         rows[[c for c in PLAN_COLUMNS if c in rows.columns]].round({'ra': 6, 'dec': 6}).to_csv(plan_path, index=False)
-        paths += [plan_path, *schedule.visibility_plots(rows, night.date, night.location, night.max_airmass,
-                                                        night.title, stem)]
+        progress('Drawing visibility plots', 0, 0)
+        paths += [plan_path, *schedule.visibility_plots(
+            rows, night.date, night.location, night.max_airmass, night.title, stem,
+            None if show is None else lambda name, fig: show('visibility', name, fig))]
     if finders:
-        paths += make_finders(rows, rows['shortname'], out_dir, survey, fov, urls, log)
+        paths += make_finders(rows, rows['shortname'], out_dir, survey, fov, urls, log,
+                              None if show is None else lambda name, item: show('finder', name, item), progress)
     log(f'Wrote {len(paths)} files to {out_dir}')
     return rows, paths
 
 
 def make_finders(targets: pd.DataFrame, names: Iterable[str], out_dir: str | Path,
                  survey: str = finder.SURVEYS[0], fov: float = 2.0, urls: tuple[str, ...] = finder.HIPS2FITS,
-                 log: Log = print) -> list[Path]:
+                 log: Log = print, show=None, progress=None) -> list[Path]:
     """Finder charts for ``names`` (matched to shortname, spaces as underscores) into ``out_dir/fcharts``;
-    raises listing every chart that could not be made."""
+    raises listing every chart that could not be made. ``show``/``progress`` as in ``finder.make_finders``."""
     names = [str(n).strip().replace(' ', '_') for n in names]
     unknown = sorted(set(names) - set(targets['shortname']))
     if unknown:
         raise ValueError(f'Not in the target list: {unknown}')
     rows = targets.set_index('shortname')
     items = [(n, rows.at[n, 'ra'], rows.at[n, 'dec']) for n in names]
-    paths, failed = finder.make_finders(items, Path(out_dir) / 'fcharts', survey, fov, urls, log)
+    paths, failed = finder.make_finders(items, Path(out_dir) / 'fcharts', survey, fov, urls, log, show, progress)
     if failed:
         raise RuntimeError(f'{len(failed)} finder charts failed: {failed}')
     return paths

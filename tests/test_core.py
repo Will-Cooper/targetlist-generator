@@ -77,7 +77,7 @@ def test_nearest_standards_brute_force(target_csv):
 
 def test_make_targetlist_outputs(target_csv, tmp_path):
     """Old code wrote 16 misaligned columns and overlapping .cat chunks."""
-    kept, paths = make_targetlist(target_csv, tmp_path / 'out', log=lambda s: None)
+    kept, paths = make_targetlist(target_csv, tmp_path / 'out', outputs=['irtf', 'cat'], log=lambda s: None)
     irtf = (tmp_path / 'out' / 'targets_irtf.txt').read_text().splitlines()
     body = [line.split('\t') for line in irtf[3:]]
     assert len(body) == 2 * len(kept) == 50 and {len(row) for row in body} == {9}
@@ -123,7 +123,8 @@ def test_plot_finder_offline(tmp_path):
     wcs.wcs.cdelt = [-2 / 60 / finder.PIXELS, 2 / 60 / finder.PIXELS]
     data = np.random.default_rng(0).normal(size=(finder.PIXELS, finder.PIXELS))
     hdu = fits.PrimaryHDU(data, header=wcs.to_header())
-    path = finder.plot_finder(hdu, 'J1000+2200', 'CDS/P/2MASS/K', 2.0, tmp_path / 'f.png')
+    path = tmp_path / 'f.png'
+    finder.finder_figure(hdu, 'J1000+2200', 'CDS/P/2MASS/K', 2.0).savefig(path)
     assert path.stat().st_size > 10_000
 
 
@@ -262,3 +263,15 @@ def test_formats_match_spec_examples(tmp_path):
     assert (tmp_path / 'l_lick.txt').read_text() == 'obj1a 12 34 56.00 +01 02 03.0 2000.0\n'
     formats.mmt(tmp_path / 'm', row, None, 'k')
     assert (tmp_path / 'm_mmt.cat').read_text() == 'FK5-0001 00:08:23.265 +29:05:25.58 +1.039 -16.33 2.06 A0 J2000.0\n'
+
+
+def test_default_formats_follow_observatory(target_csv, tmp_path):
+    from targetlist_generator import formats
+    assert formats.defaults('irtf') == ('irtf',) and formats.defaults('keck') == ('keck',)
+    assert formats.defaults('paranal') == ('eso',) and formats.defaults('lapalma') == ('cat',)
+    assert formats.defaults('lco') == ('magellan',) and formats.defaults('Subaru') == ('subaru',)
+    assert formats.defaults('ALMA') == ('csv',) and formats.defaults(None) == ('csv',)
+    assert formats.defaults(None, from_samp=True) == ('votable',)
+    assert formats.defaults('mmt', from_samp=True) == ('mmt',)  # the observatory wins
+    cli.main(['make', str(target_csv), '-o', str(tmp_path), '--date', '2026-11-30', '--site', 'keck'])
+    assert (tmp_path / 'targets_keck.txt').exists() and not (tmp_path / 'targets_list.csv').exists()
