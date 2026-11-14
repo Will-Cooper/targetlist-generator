@@ -145,6 +145,9 @@ If no hips2fits service answers and [Aladin Desktop](https://aladin.cds.unistra.
 ### Bundled data
 `src/targetlist_generator/data/observatories.csv` is a snapshot of astropy's site registry (astropy-data `coordinates/sites.json`, BSD 3-Clause licence).
 
+## Problems or ideas
+If something is not working as intended, or you would like a feature (for example another telescope's list format), please [open an issue](https://github.com/Will-Cooper/targetlist-generator/issues/new) describing what you did, what you expected and what happened, ideally with the table you used.
+
 ## Developing
 ```bash
 pip install -e ".[dev,gui-test]"

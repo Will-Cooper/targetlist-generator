@@ -38,6 +38,7 @@ jobs:
         run: >
           pyinstaller --noconfirm --windowed --name targetlist-gui
           --collect-data astropy --collect-data astropy_iers_data --collect-data targetlist_generator
+          --collect-data tzdata
           --copy-metadata targetlist-generator packaging/launch_gui.py
       - name: Smoke test (Linux)
         if: runner.os == 'Linux'
