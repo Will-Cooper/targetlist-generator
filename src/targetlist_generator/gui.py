@@ -1,9 +1,11 @@
 """Graphical interface: load a table (file or SAMP), set times, night and observatory, plan, save."""
+import os
 import sys
 import tempfile
 from pathlib import Path
 from urllib.request import urlretrieve
 
+import PySide6
 from PySide6.QtCore import QDate, QObject, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
@@ -446,7 +448,18 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 
+def use_bundled_qt_plugins() -> None:
+    """Point Qt at the plugins shipped with PySide6 (pip wheels, frozen apps). Otherwise a qt6.conf next to the
+    Python executable, e.g. from conda's qtbase package, sends Qt to another Qt version's platform plugins and the
+    window aborts with 'no Qt platform plugin could be initialized'. Paths the user set explicitly win."""
+    plugins = Path(PySide6.__file__).parent / 'Qt' / 'plugins'
+    if (plugins / 'platforms').is_dir():  # system-packaged PySide6 uses the system Qt's own plugins instead
+        os.environ.setdefault('QT_PLUGIN_PATH', str(plugins))
+        os.environ.setdefault('QT_QPA_PLATFORM_PLUGIN_PATH', str(plugins / 'platforms'))
+
+
 def main():
+    use_bundled_qt_plugins()
     app = QApplication.instance() or QApplication(sys.argv)
     window = MainWindow()
     window.show()

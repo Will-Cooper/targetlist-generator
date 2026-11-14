@@ -34,6 +34,21 @@ def test_gui_plan_prompts_for_folder(qtbot, window, target_csv, tmp_path, monkey
     assert window.plots.count() >= 1 and not window.plot.pixmap().isNull()
 
 
+def test_bundled_qt_plugins(monkeypatch):
+    """A conda qt6.conf must not send PySide6 to another Qt's plugins; explicit user paths win."""
+    from pathlib import Path
+
+    import PySide6
+
+    from targetlist_generator.gui import use_bundled_qt_plugins
+    monkeypatch.delenv('QT_PLUGIN_PATH', raising=False)
+    monkeypatch.setenv('QT_QPA_PLATFORM_PLUGIN_PATH', '/my/plugins')
+    use_bundled_qt_plugins()
+    import os
+    assert os.environ['QT_PLUGIN_PATH'] == str(Path(PySide6.__file__).parent / 'Qt' / 'plugins')
+    assert os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] == '/my/plugins'
+
+
 def test_gui_custom_coordinates(window):
     from targetlist_generator.gui import CUSTOM
     window.lat.setValue(-24.6)
