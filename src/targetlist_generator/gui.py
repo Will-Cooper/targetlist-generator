@@ -6,7 +6,6 @@ from pathlib import Path
 from urllib.request import urlretrieve
 
 import PySide6
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from matplotlib.figure import Figure
 from matplotlib.image import imread
 from PySide6.QtCore import QDate, QObject, Qt, QThread, QUrl, Signal
@@ -76,6 +75,10 @@ def compact(*combos: QComboBox, chars: int = 22) -> None:
 
 def figure_page(fig: Figure) -> QWidget:
     """A matplotlib figure with its zoom/pan/save toolbar."""
+    # Imported here, after PySide6, with the binding forced: otherwise matplotlib picks the first Qt binding it
+    # finds (e.g. conda's PyQt6), which loads another Qt version and breaks PySide6 (undefined Qt symbols).
+    os.environ['QT_API'] = 'pyside6'
+    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
     page = QWidget()
     layout = QVBoxLayout(page)
     canvas = FigureCanvasQTAgg(fig)

@@ -136,3 +136,20 @@ def test_gui_receives_samp_table(qtbot, window, target_csv, tmp_path):
         window.listen.setChecked(False)
         os.environ.pop('SAMP_HUB', None)
         hub.stop()
+
+
+def test_matplotlib_uses_pyside6(tmp_path):
+    """matplotlib must embed with PySide6 even if another binding is preferred (conda base ships PyQt6)."""
+    import subprocess
+    import sys
+    code = ('from targetlist_generator.gui import figure_page\n'
+            'from PySide6.QtWidgets import QApplication\n'
+            'from matplotlib.figure import Figure\n'
+            'app = QApplication([])\n'
+            'figure_page(Figure())\n'
+            'from matplotlib.backends import qt_compat\n'
+            'print(qt_compat.QT_API)\n')
+    env = {**os.environ, 'QT_API': 'pyqt6', 'QT_QPA_PLATFORM': 'offscreen'}
+    out = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip().endswith('PySide6')
