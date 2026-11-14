@@ -74,7 +74,11 @@ def test_charts_appear_as_made(window, tmp_path):
     window.add_figure('finder', 'B', png)  # an Aladin PNG
     assert window.chart_pages.count() == 2 and window.tabs.tabText(2) == 'Finder charts (2)'
     from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+    canvas = window.chart_pages.widget(0).findChild(FigureCanvasQTAgg)
     assert window.chart_pages.widget(1).findChild(FigureCanvasQTAgg) is not None
+    canvas.figure.axes[0].set_xlim(0.2, 0.4)  # what the toolbar's zoom does
+    canvas.draw()
+    assert canvas.figure.axes[0].get_xlim() == (0.2, 0.4)
 
 
 def test_configure_qt(monkeypatch):
