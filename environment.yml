@@ -1,0 +1,13 @@
+# A separate environment for the target list generator, from a clone of this repository:
+#   conda env create -f environment.yml --no-default-packages && conda activate targetlist
+# Conda provides only Python; the package and its window (PySide6 with its own Qt) come from pip. Keep conda's
+# qt/pyqt/matplotlib packages out (hence --no-default-packages): two Qt versions in one environment stop the window
+# from starting.
+name: targetlist
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - -e .[gui]

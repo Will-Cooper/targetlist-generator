@@ -26,7 +26,32 @@ The apps are not code-signed, so the first launch needs one extra step:
 3. Start it with `targetlist-gui` (or `targetlist --help` for the command line).
 
 Update later with `uv tool upgrade targetlist-generator`.
-Python users can instead `pip install "targetlist-generator[gui] @ git+https://github.com/Will-Cooper/targetlist-generator"`.
+uv keeps the tool in its own environment, so it cannot clash with other software.
+
+## Installing from a clone (conda or venv)
+Give the tool an environment of its own rather than installing into conda's base environment.
+Base often already holds conda's Qt (it comes with Spyder, qtconsole or PyQt), and two Qt versions in one environment stop the window from starting.
+For the same reason the conda command below skips any `create_default_packages` from your `.condarc`: conda's matplotlib package brings conda's Qt with it.
+
+With conda:
+```bash
+git clone https://github.com/Will-Cooper/targetlist-generator.git
+cd targetlist-generator
+conda env create -f environment.yml --no-default-packages
+conda activate targetlist
+targetlist-gui
+```
+
+With a plain Python virtual environment:
+```bash
+git clone https://github.com/Will-Cooper/targetlist-generator.git
+cd targetlist-generator
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -e ".[gui]"
+targetlist-gui
+```
+Both install in editable mode, so `git pull` updates the tool.
 
 ## Using the window
 Work down the left-hand side:
