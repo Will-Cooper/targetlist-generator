@@ -1,3 +1,7 @@
+import os
+from pathlib import Path
+
+import pandas as pd
 import pytest
 
 pytest.importorskip('PySide6')
@@ -20,33 +24,72 @@ def test_gui_plan_prompts_for_folder(qtbot, window, target_csv, tmp_path, monkey
     monkeypatch.setattr(QFileDialog, 'getExistingDirectory', lambda *a: asked.append(a[1]) or str(tmp_path))
     window.load_targets(str(target_csv))
     assert window.mag_col.currentText() == 'tmassk'
+    assert window.table_status.text().startswith('25 targets') and window.run_button.isEnabled()
     assert window.site.currentText().startswith('NASA Infrared Telescope Facility')
     assert window.lat.value() == pytest.approx(19.826, abs=1e-3)
     window.date.setDate(QDate(2026, 11, 30))
-    window.format_boxes['keck'].setChecked(True)
-    window.format_boxes['csv'].setChecked(False)
     with qtbot.waitSignal(window.finished, timeout=120_000):
         window.run_button.click()
     assert asked == ['Where should the lists and charts be saved?']
     headers = [window.table.horizontalHeaderItem(j).text() for j in range(window.table.columnCount())]
     assert {'status', 'target_start', 'standard', 'std_sep'} <= set(headers)
-    assert (tmp_path / 'targets_keck.txt').exists() and not (tmp_path / 'targets_list.csv').exists()
-    assert window.plots.count() >= 1 and not window.plot.pixmap().isNull()
+    assert (tmp_path / 'targets_irtf.txt').exists() and not (tmp_path / 'targets_list.csv').exists()
+    assert window.plot_pages.count() == window.plots.count() >= 1
+    assert window.tabs.tabText(1) == f'Visibility ({window.plot_pages.count()})'
+    assert window.status.text().startswith('Saved') and window.progress.value() == 1
 
 
-def test_bundled_qt_plugins(monkeypatch):
-    """A conda qt6.conf must not send PySide6 to another Qt's plugins; explicit user paths win."""
-    from pathlib import Path
+def test_default_formats_follow_observatory(window):
+    from targetlist_generator.gui import CUSTOM
+    ticked = lambda: sorted(k for k, box in window.format_boxes.items() if box.isChecked())  # noqa: E731
+    assert ticked() == ['irtf']
+    window.site.setCurrentIndex(next(i for i in range(window.site.count())
+                                     if window.site.itemText(i).startswith('W. M. Keck')))
+    assert ticked() == ['keck']
+    window.site.setCurrentIndex(0)
+    assert window.site.currentText() == CUSTOM
+    assert ticked() == ['csv']
+    window.from_samp = True
+    window.default_formats()
+    assert ticked() == ['votable']
+    window.format_boxes['eso'].click()  # a user choice now stands
+    window.site.setCurrentIndex(1)
+    assert ticked() == ['eso', 'votable']
 
+
+def test_missing_column_blocks_planning(window, tmp_path):
+    path = tmp_path / 'nospt.csv'
+    pd.DataFrame({'name': ['a'], 'ra': [10.0], 'dec': [20.0], 'tmassk': [12.0]}).to_csv(path, index=False)
+    window.load_targets(str(path))
+    assert "missing columns ['spt']" in window.table_status.text() and not window.run_button.isEnabled()
+
+
+def test_charts_appear_as_made(window, tmp_path):
+    from matplotlib.figure import Figure
+    png = tmp_path / 'chart.png'
+    fig = Figure()
+    fig.add_subplot().plot([0, 1], [0, 1])
+    fig.savefig(png)
+    window.add_figure('finder', 'A', fig)
+    window.add_figure('finder', 'B', png)  # an Aladin PNG
+    assert window.chart_pages.count() == 2 and window.tabs.tabText(2) == 'Finder charts (2)'
+    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+    assert window.chart_pages.widget(1).findChild(FigureCanvasQTAgg) is not None
+
+
+def test_configure_qt(monkeypatch):
+    """A conda qt6.conf must not send PySide6 to another Qt's plugins; explicit user paths win; Wayland
+    text-input warnings are silenced without dropping the user's own logging rules."""
     import PySide6
 
-    from targetlist_generator.gui import use_bundled_qt_plugins
+    from targetlist_generator.gui import configure_qt
     monkeypatch.delenv('QT_PLUGIN_PATH', raising=False)
     monkeypatch.setenv('QT_QPA_PLATFORM_PLUGIN_PATH', '/my/plugins')
-    use_bundled_qt_plugins()
-    import os
+    monkeypatch.setenv('QT_LOGGING_RULES', 'qt.foo=true')
+    configure_qt()
     assert os.environ['QT_PLUGIN_PATH'] == str(Path(PySide6.__file__).parent / 'Qt' / 'plugins')
     assert os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] == '/my/plugins'
+    assert os.environ['QT_LOGGING_RULES'] == 'qt.foo=true;qt.qpa.wayland.textinput=false'
 
 
 def test_gui_custom_coordinates(window):
@@ -69,7 +112,6 @@ def test_gui_receives_samp_table(qtbot, window, target_csv, tmp_path):
     from pyvo.samp import SAMPHubServer, SAMPIntegratedClient
     hub = SAMPHubServer(web_profile=False, lockfile=str(tmp_path / 'samp.lock'))
     hub.start()
-    import os
     os.environ['SAMP_HUB'] = f'std-lockurl:file://{tmp_path / "samp.lock"}'
     try:
         window.listen.setChecked(True)
@@ -83,6 +125,7 @@ def test_gui_receives_samp_table(qtbot, window, target_csv, tmp_path):
                 topcat.notify_all({'samp.mtype': 'table.load.votable',
                                    'samp.params': {'url': vot.as_uri(), 'name': 'sent'}})
             assert window.target_list.text().endswith('.vot') and window.mag_col.currentText() == 'tmassk'
+            assert window.from_samp
         finally:
             topcat.disconnect()
     finally:

@@ -36,7 +36,7 @@ def fetch_cutout(ra: float, dec: float, survey: str, fov: float, urls: tuple[str
 
 def finder_figure(hdu: fits.PrimaryHDU, name: str, survey: str, fov: float) -> Figure:
     """Inverted greyscale chart with a centre reticle and N/E arrows."""
-    fig = Figure(figsize=(6, 6))
+    fig = Figure(figsize=(6, 6), layout='constrained')
     ax = fig.add_subplot(projection=WCS(hdu.header))
     data = np.squeeze(hdu.data)
     vmin, vmax = np.nanpercentile(data, [1, 99.5])

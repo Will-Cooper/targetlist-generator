@@ -30,15 +30,16 @@ Python users can instead `pip install "targetlist-generator[gui] @ git+https://g
 
 ## Using the window
 Work down the left-hand side:
-1. **Target table**: browse to a file, or tick *Listen for TOPCAT (SAMP)* and use TOPCAT's *Interop → Send table to → Target List Generator* (a SAMP hub is started if none is running).
+1. **Target table**: browse to a file, or tick *Listen for TOPCAT (SAMP)* and use TOPCAT's *Interop → Send table to → Target List Generator* (a SAMP hub is started if none is running). The window checks the table has the columns it needs before you can plan.
 2. **Time per target block**: the same observing time for every target (default 30 min) or a column of minutes from the table, plus the time for each standard (default 10 min) and for calibrations (default 5 min).
 3. **Night and observatory**: pick the evening from the calendar and type part of an observatory's name or alias (e.g. *irtf*, *keck*, *palma*) or enter latitude/longitude; set the airmass limit and the Moon filter (automatic by default: 10 deg from a new Moon up to 40 deg from a full one).
 4. **Telluric standards**: on or off, band, spectral type, airmass tolerance and maximum distance on the sky.
 5. Optionally an **RA/Dec box**.
-6. **Outputs**: tick the list formats you need, optionally finder charts, and choose where to save them (asked when you press *Plan the night* if not set).
+6. **Outputs**: the list format for the chosen observatory is ticked for you (otherwise CSV, or VOTable for a table sent from TOPCAT); tick others as you like, optionally finder charts, and choose where to save them (asked when you press *Plan the night* if not set).
 
+A progress bar under *Plan the night* shows what is happening (finder charts can take a few minutes when drawn by Aladin).
 The *Plan* tab shows the night: each target's block, its standard and how far the telescope moves to reach it.
-The *Visibility* tab shows ING-style plots of every target's altitude through the night, with the planned blocks drawn thick.
+The *Visibility* tab shows ING-style plots of every target's altitude through the night, with the planned blocks drawn thick, and the *Finder charts* tab each chart as it is made; both can be zoomed, panned and saved with the toolbar above them.
 
 ## Try it
 `examples/example_targets.csv` holds 40 made-up targets (synthetic positions, not real objects) spread around the sky, with sexagesimal coordinates, string and numeric spectral types, proper motions and an `exptime` column of minutes.
@@ -83,7 +84,8 @@ Choose the magnitude band with `--std-band`, a single spectral type with `--std-
 
 ### Output (in `--out-dir`, default `targetlist_out/`)
 With a night, always `<name>_plan.csv` (status, target and standard times, airmasses, standard distance, Moon separation) and `<name>_visibility_N.png` (ten targets per plot).
-Plus the formats chosen with `--formats` (default `irtf,cat,csv`), each listing every target followed by its standard:
+Plus the formats chosen with `--formats`, each listing every target followed by its standard.
+The default, `auto`, writes the chosen observatory's own format (IRTF → `irtf`, Keck → `keck`, Lick → `lick`, Paranal and La Silla → `eso`, Subaru → `subaru`, MMT → `mmt`, Las Campanas → `magellan`, La Palma → `cat`), and CSV otherwise:
 
 | key | file | for |
 | --- | --- | --- |

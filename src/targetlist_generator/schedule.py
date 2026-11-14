@@ -67,7 +67,7 @@ def visibility_plots(plan: pd.DataFrame, date: str, location, max_airmass: float
     for k, start in enumerate(range(0, len(plan), PER_PLOT), 1):
         chunk = plan.iloc[start:start + PER_PLOT]
         with rc_context({'font.family': 'serif'}):
-            fig = Figure(figsize=(9, 5.5))
+            fig = Figure(figsize=(9, 5.5), layout='constrained')  # re-fits when the window resizes
             ax = fig.add_subplot()
             for level in (-18, -12, -6, 0):
                 ax.fill_between(when, 0, 90, where=sun > level, color='grey', alpha=0.12, lw=0)
@@ -96,7 +96,7 @@ def visibility_plots(plan: pd.DataFrame, date: str, location, max_airmass: float
             right.set_ylabel('Airmass')
             ax.set_xlabel(f'UTC from {times[0].iso[:10]} [h]')
             ax.set_ylabel('Altitude [deg]')
-            ax.set_title(f'{title}, night of {date}' + (f' ({k})' if len(plan) > PER_PLOT else ''))
+            ax.set_title(f'{title}\nnight of {date}' + (f' ({k})' if len(plan) > PER_PLOT else ''))
             ax.legend(loc='upper right', fontsize=7, frameon=False)
             path = stem.with_name(f'{stem.name}_visibility_{k}.png')
             fig.savefig(path, dpi=150, bbox_inches='tight')

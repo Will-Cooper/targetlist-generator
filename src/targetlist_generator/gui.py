@@ -6,8 +6,11 @@ from pathlib import Path
 from urllib.request import urlretrieve
 
 import PySide6
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
+from matplotlib.figure import Figure
+from matplotlib.image import imread
 from PySide6.QtCore import QDate, QObject, Qt, QThread, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QPixmap
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -26,10 +29,12 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QRadioButton,
     QScrollArea,
     QSplitter,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -44,6 +49,9 @@ CUSTOM = 'Custom (latitude/longitude below)'
 DEFAULT_SITE = 'NASA Infrared Telescope Facility'
 TABLES = 'Tables (*.csv *.fits *.fit *.ecsv *.vot *.xml *.txt);;All files (*)'
 SAMP_TYPES = {'table.load.votable': '.vot', 'table.load.fits': '.fits'}
+COLUMNS_HELP = ('Needs: name (or shortname), ra, dec, spt and a magnitude column. '
+                'Optional: pmra, pmdec (mas/yr), epoch, minutes per target.')
+ERROR = 'color: #B00020'
 
 
 def spin(lo: float, hi: float, value: float, decimals: int = 2, step: float = 1.0) -> QDoubleSpinBox:
@@ -59,6 +67,32 @@ def form(group: QGroupBox, rows) -> QGroupBox:
     return group
 
 
+def compact(*combos: QComboBox, chars: int = 22) -> None:
+    """Stop combos widening the whole column to fit their longest item."""
+    for combo in combos:
+        combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(chars)
+
+
+def figure_page(fig: Figure) -> QWidget:
+    """A matplotlib figure with its zoom/pan/save toolbar."""
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    canvas = FigureCanvasQTAgg(fig)
+    layout.addWidget(NavigationToolbar2QT(canvas, page))
+    layout.addWidget(canvas)
+    return page
+
+
+def png_figure(path: Path) -> Figure:
+    """A PNG (e.g. an Aladin chart) in a figure, so it can be zoomed like the others."""
+    fig = Figure(figsize=(6, 6))
+    ax = fig.add_axes((0, 0, 1, 1))
+    ax.imshow(imread(path))
+    ax.set_axis_off()
+    return fig
+
+
 def pair(*widgets) -> QHBoxLayout:
     row = QHBoxLayout()
     for widget in widgets:
@@ -69,6 +103,8 @@ def pair(*widgets) -> QHBoxLayout:
 class Worker(QObject):
     """Runs the pipeline off the GUI thread."""
     log = Signal(str)
+    show = Signal(str, str, object)  # kind, name, Figure or PNG path
+    progress = Signal(str, int, int)  # message, done, total (0 = busy)
     done = Signal(object)
     failed = Signal(str)
 
@@ -78,7 +114,8 @@ class Worker(QObject):
 
     def run(self):
         try:
-            self.done.emit(make_targetlist(log=self.log.emit, **self.kwargs))
+            self.done.emit(make_targetlist(log=self.log.emit, show=self.show.emit, progress=self.progress.emit,
+                                           **self.kwargs))
         except Exception as err:  # thread boundary: every failure is shown to the user, never swallowed
             self.failed.emit(f'{type(err).__name__}: {err}')
 
@@ -144,15 +181,22 @@ class MainWindow(QMainWindow):
         self.samp.failed.connect(lambda msg: QMessageBox.warning(self, 'SAMP', msg))
 
         # 1. table
-        self.target_list = QLineEdit(placeholderText='CSV, FITS, ECSV, VOTable or IRTF .txt, or send from TOPCAT')
+        self.target_list = QLineEdit(placeholderText='CSV, FITS, VOTable, ...')
+        self.from_samp = False
+        self.table_df = None
         self.listen = QCheckBox('Listen for TOPCAT (SAMP)')
         self.listen.toggled.connect(self.toggle_samp)
         self.mag_col = QComboBox(editable=True)
+        self.mag_col.currentTextChanged.connect(self.check_table)
+        columns_help = QLabel(COLUMNS_HELP, wordWrap=True)
+        self.table_status = QLabel(wordWrap=True)
         table = QGroupBox('1. Target table')
         table_form = QFormLayout(table)
         table_form.addRow('File', self.with_browse(self.target_list, self.browse_targets))
         table_form.addRow('', self.listen)
         table_form.addRow('Magnitude column', self.mag_col)
+        table_form.addRow(columns_help)
+        table_form.addRow(self.table_status)
 
         # 2. times
         self.time_same, self.time_column = QRadioButton('Same for all [min]'), QRadioButton('From column')
@@ -195,7 +239,7 @@ class MainWindow(QMainWindow):
                           ('Twilight Sun altitude [deg]', self.twilight), ('Max airmass', self.max_airmass),
                           ('Min time below it [min]', self.min_time),
                           ('Moon separation', pair(self.moon, self.moon_sep))))
-        self.site.setCurrentIndex(self.site.findText(DEFAULT_SITE, Qt.MatchStartsWith))
+        self.night.toggled.connect(lambda _: self.default_formats())
 
         # 4. standards
         self.stds = QGroupBox('4. Telluric standards', checkable=True)
@@ -220,14 +264,16 @@ class MainWindow(QMainWindow):
         grid = QGridLayout()
         self.format_boxes = {}
         for n, (key, (label, _)) in enumerate(formats.FORMATS.items()):
-            self.format_boxes[key] = QCheckBox(label, checked=key in formats.DEFAULT)
+            self.format_boxes[key] = QCheckBox(label)
+            self.format_boxes[key].clicked.connect(self.formats_chosen)  # user clicks only, not our defaults
             grid.addWidget(self.format_boxes[key], n // 2, n % 2)
         self.finders = QCheckBox('Finder charts')
         self.survey = QComboBox(editable=True)
         self.survey.addItems(finder.SURVEYS)
         self.fov = spin(0.2, 60, 2, 1, 0.5)
         self.mirror = QLineEdit(placeholderText='optional hips2fits mirror URL')
-        self.out_dir = QLineEdit(placeholderText='asked when you press Run')
+        self.formats_touched = False
+        self.out_dir = QLineEdit(placeholderText='asked when you plan')
         out_form = QFormLayout(outputs)
         out_form.addRow(grid)
         out_form.addRow(self.finders, pair(self.survey, QLabel('width [arcmin]'), self.fov))
@@ -238,48 +284,54 @@ class MainWindow(QMainWindow):
         self.run_button.clicked.connect(self.run)
         open_button = QPushButton('Open output folder')
         open_button.clicked.connect(self.open_output)
+        self.progress = QProgressBar(textVisible=False)
+        self.progress.setRange(0, 1)
+        self.status = QLabel(wordWrap=True)
+        compact(self.mag_col, self.time_col, self.site, self.survey)
 
         inputs = QWidget()
         column = QVBoxLayout(inputs)
         for widget in (table, times, self.night, self.stds, self.box, outputs):
             column.addWidget(widget)
         column.addLayout(pair(self.run_button, open_button))
+        column.addWidget(self.progress)
+        column.addWidget(self.status)
         column.addStretch()
         scroll = QScrollArea(widgetResizable=True)
         scroll.setWidget(inputs)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setMinimumWidth(inputs.sizeHint().width() + scroll.verticalScrollBar().sizeHint().width() + 4)
 
         self.log = QPlainTextEdit(readOnly=True)
         self.table = QTableWidget()
         self.plots = QComboBox()
-        self.plot = QLabel('Give a night to see visibility plots', alignment=Qt.AlignCenter)
-        self.plots.currentIndexChanged.connect(self.show_plot)
-        self.plot_scroll = QScrollArea(widgetResizable=True)
-        self.plot_scroll.setWidget(self.plot)
+        self.plot_pages = QStackedWidget()
+        self.plots.currentIndexChanged.connect(self.plot_pages.setCurrentIndex)
         plot_view = QWidget()
         plot_layout = QVBoxLayout(plot_view)
         plot_layout.addWidget(self.plots)
-        plot_layout.addWidget(self.plot_scroll)
+        plot_layout.addWidget(self.plot_pages)
         self.charts = QListWidget()
-        self.chart = QLabel(alignment=Qt.AlignCenter)
-        self.charts.currentTextChanged.connect(self.show_chart)
+        self.chart_pages = QStackedWidget()
+        self.charts.currentRowChanged.connect(self.chart_pages.setCurrentIndex)
         chart_view = QSplitter()
         chart_view.addWidget(self.charts)
-        chart_view.addWidget(self.chart)
+        chart_view.addWidget(self.chart_pages)
+        chart_view.setSizes([160, 600])
         self.tabs = QTabWidget()
         self.tabs.addTab(self.table, 'Plan')
         self.tabs.addTab(plot_view, 'Visibility')
         self.tabs.addTab(chart_view, 'Finder charts')
         self.tabs.addTab(self.log, 'Log')
-        self.tabs.currentChanged.connect(lambda _: self.show_plot(self.plots.currentIndex()))  # rescale to fit
 
         main = QSplitter()
         main.addWidget(scroll)
         main.addWidget(self.tabs)
-        main.setSizes([460, 760])
+        main.setStretchFactor(1, 1)
         self.setCentralWidget(main)
         self.resize(1250, 820)
-        self.plot_paths: list[Path] = []
-        self.chart_paths: dict[str, Path] = {}
+        self.site.setCurrentIndex(self.site.findText(DEFAULT_SITE, Qt.MatchStartsWith))
+        self.default_formats()
 
     def with_browse(self, line: QLineEdit, slot) -> QHBoxLayout:
         button = QPushButton('Browse…')
@@ -289,7 +341,9 @@ class MainWindow(QMainWindow):
     def browse_targets(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Target table', str(Path.home()), TABLES)
         if path:
+            self.from_samp = False
             self.load_targets(path)
+            self.default_formats()
 
     def browse_out(self):
         path = QFileDialog.getExistingDirectory(self, 'Where should the lists and charts be saved?',
@@ -309,8 +363,26 @@ class MainWindow(QMainWindow):
         for box in (self.mag_col, self.time_col):
             box.clear()
             box.addItems(numeric)
+        self.table_df = df
         self.mag_col.setCurrentText('tmassk' if 'tmassk' in df.columns else self.mag_col.itemText(0))
         self.log.appendPlainText(f'{label or path}: {len(df)} rows, columns {list(df.columns)}')
+        self.check_table()
+
+    def check_table(self):
+        """Say whether the loaded table has the required columns; planning waits until it does."""
+        if self.table_df is None:
+            return
+        try:
+            n = len(io.normalise(self.table_df.copy(), self.mag_col.currentText(), source='This table'))
+        except ValueError as err:
+            self.table_status.setStyleSheet(ERROR)
+            self.table_status.setText(f"Can't plan yet. {err}. Add or rename the column, or choose another "
+                                      'magnitude column.')
+            self.run_button.setEnabled(False)
+            return
+        self.table_status.setStyleSheet('')
+        self.table_status.setText(f'{n} targets, all required columns found.')
+        self.run_button.setEnabled(True)
 
     def toggle_samp(self, on: bool):
         try:
@@ -324,10 +396,13 @@ class MainWindow(QMainWindow):
         self.log.appendPlainText('Listening for tables from TOPCAT (SAMP)' if on else 'Stopped listening (SAMP)')
 
     def samp_table(self, path: str, name: str):
+        self.from_samp = True
         self.load_targets(path, label=f'From SAMP: {name}')
+        self.default_formats()
         self.raise_()
 
     def site_changed(self, index: int):
+        self.default_formats()
         row = self.site.itemData(index)
         if row is None:
             return
@@ -337,10 +412,24 @@ class MainWindow(QMainWindow):
             box.setValue(value)
             box.blockSignals(False)
 
+    def formats_chosen(self):
+        self.formats_touched = True  # from now on the user's choice stands
+
+    def default_formats(self):
+        """Tick the observatory's own list format, else VOTable for a TOPCAT table, else CSV, until the user
+        chooses formats themselves."""
+        if self.formats_touched:
+            return
+        row = self.site.currentData() if self.night.isChecked() else None
+        keys = formats.defaults(None if row is None else sky.observatories().loc[row, 'name'], self.from_samp)
+        for key, box in self.format_boxes.items():
+            box.setChecked(key in keys)
+
     def coords_typed(self):
         self.site.blockSignals(True)
         self.site.setCurrentIndex(0)  # typed coordinates: custom site
         self.site.blockSignals(False)
+        self.default_formats()
 
     def kwargs(self) -> dict:
         if not self.target_list.text():
@@ -387,11 +476,19 @@ class MainWindow(QMainWindow):
                 return
             kwargs['out_dir'] = self.out_dir.text()
         self.run_button.setEnabled(False)
+        for combo, pages in ((self.plots, self.plot_pages), (self.charts, self.chart_pages)):
+            combo.clear()
+            while pages.count():
+                pages.removeWidget(pages.widget(0))
+        self.set_tab_counts()
+        self.status.setStyleSheet('')
         self.tabs.setCurrentWidget(self.log)
         self.thread, self.worker = QThread(self), Worker(kwargs)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.log.connect(self.log.appendPlainText)
+        self.worker.show.connect(self.add_figure)
+        self.worker.progress.connect(self.show_progress)
         self.worker.done.connect(self.on_done)
         self.worker.failed.connect(self.on_failed)
         self.thread.start()
@@ -415,29 +512,40 @@ class MainWindow(QMainWindow):
             for j, value in enumerate(row):
                 self.table.setItem(i, j, QTableWidgetItem('' if value is None else str(value)))
         self.table.resizeColumnsToContents()
-        self.plot_paths = [p for p in paths if '_visibility_' in p.name]
-        self.plots.clear()
-        self.plots.addItems([p.stem for p in self.plot_paths])
-        self.chart_paths = {p.stem: p for p in paths if p.parent.name == 'fcharts'}
-        self.charts.clear()
-        self.charts.addItems(list(self.chart_paths))
+        self.progress.setRange(0, 1)
+        self.progress.setValue(1)
+        self.status.setText(f'Saved {len(paths)} files in {self.out_dir.text()}')
+        self.set_tab_counts()
         self.tabs.setCurrentWidget(self.table)
         self.end_run()
 
     def on_failed(self, message: str):
         self.log.appendPlainText(message)
+        self.progress.setRange(0, 1)
+        self.progress.setValue(0)
+        self.status.setStyleSheet(ERROR)
+        self.status.setText(f'Stopped: {message}')
         self.end_run()
         QMessageBox.critical(self, 'Run failed', message)
 
-    def show_plot(self, index: int):
-        if 0 <= index < len(self.plot_paths):
-            width = self.plot_scroll.viewport().width() - 4  # fit the tab; scroll for the rest
-            self.plot.setPixmap(QPixmap(str(self.plot_paths[index])).scaledToWidth(width, Qt.SmoothTransformation))
+    def show_progress(self, message: str, done: int, total: int):
+        self.progress.setRange(0, total)  # (0, 0) = busy
+        self.progress.setValue(done)
+        self.status.setText(message)
 
-    def show_chart(self, name: str):
-        if name in self.chart_paths:
-            self.chart.setPixmap(QPixmap(str(self.chart_paths[name])).scaled(
-                self.chart.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+    def add_figure(self, kind: str, name: str, item):
+        """Show a visibility plot or finder chart as soon as it is made."""
+        fig = item if isinstance(item, Figure) else png_figure(Path(item))
+        combo, pages = (self.plots, self.plot_pages) if kind == 'visibility' else (self.charts, self.chart_pages)
+        pages.addWidget(figure_page(fig))
+        combo.addItem(name)
+        if pages.count() == 1:
+            combo.setCurrentRow(0) if combo is self.charts else combo.setCurrentIndex(0)
+        self.set_tab_counts()
+
+    def set_tab_counts(self):
+        for index, label, pages in ((1, 'Visibility', self.plot_pages), (2, 'Finder charts', self.chart_pages)):
+            self.tabs.setTabText(index, f'{label} ({pages.count()})' if pages.count() else label)
 
     def open_output(self):
         if self.out_dir.text():
@@ -448,10 +556,13 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 
-def use_bundled_qt_plugins() -> None:
+def configure_qt() -> None:
     """Point Qt at the plugins shipped with PySide6 (pip wheels, frozen apps). Otherwise a qt6.conf next to the
     Python executable, e.g. from conda's qtbase package, sends Qt to another Qt version's platform plugins and the
-    window aborts with 'no Qt platform plugin could be initialized'. Paths the user set explicitly win."""
+    window aborts with 'no Qt platform plugin could be initialized'. Paths the user set explicitly win.
+    Also silences Qt's harmless Wayland text-input warnings."""
+    rules = [r for r in os.environ.get('QT_LOGGING_RULES', '').split(';') if r]
+    os.environ['QT_LOGGING_RULES'] = ';'.join([*rules, 'qt.qpa.wayland.textinput=false'])
     plugins = Path(PySide6.__file__).parent / 'Qt' / 'plugins'
     if (plugins / 'platforms').is_dir():  # system-packaged PySide6 uses the system Qt's own plugins instead
         os.environ.setdefault('QT_PLUGIN_PATH', str(plugins))
@@ -459,7 +570,7 @@ def use_bundled_qt_plugins() -> None:
 
 
 def main():
-    use_bundled_qt_plugins()
+    configure_qt()
     app = QApplication.instance() or QApplication(sys.argv)
     window = MainWindow()
     window.show()
