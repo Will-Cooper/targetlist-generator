@@ -111,13 +111,40 @@ def test_make_targetlist_outputs(target_csv, tmp_path):
     """Old code wrote 16 misaligned columns and overlapping .cat chunks."""
     kept, paths = make_targetlist(target_csv, tmp_path / 'out', outputs=['irtf', 'cat'], log=lambda s: None)
     irtf = (tmp_path / 'out' / 'targets_irtf.txt').read_text().splitlines()
-    body = [line.split('\t') for line in irtf[3:]]
+    body = [line.split() for line in irtf if not line.startswith('#')]
     assert len(body) == 2 * len(kept) == 50 and {len(row) for row in body} == {9}
     assert [row[0] for row in body] == [str(i) for i in range(1, 51)]
-    assert all(row[7] in ('B9V', 'A0V', 'A1V') for row in body[1::2])
+    assert all(row[6] in ('B9V', 'A0V', 'A1V') and row[8] == 'K' for row in body[1::2])
     cats = sorted((tmp_path / 'out' / 'cats').glob('*.cat'))
     names = [line.split()[0] for p in cats for line in p.read_text().splitlines()]
     assert len(cats) == 3 and names == list(kept['shortname'])
+
+
+def test_irtf_v3_matches_guide_and_reads_back(tmp_path):
+    """The STARCAT guide's v3 example line, and our own v3 list read back into the same targets."""
+    from targetlist_generator import formats
+    dec = sky.parse_angle('+20:22:16.0', u.deg)
+    row = pd.DataFrame({'shortname': ['HD_132599'], 'ra': [sky.parse_angle('14:59:28.00', u.hourangle)],
+                        'dec': [dec], 'epoch': [2000.0], 'pmra': [15.75 * np.cos(np.radians(dec))],
+                        'pmdec': [-9.0], 'spt': ['KO'], 'vmag': [8.6]})  # guide: 15.75 -9.00 KO 8.6 V
+    formats.irtf(tmp_path / 'g', row, None, 'vmag')
+    line = (tmp_path / 'g_irtf_nostds.txt').read_text().splitlines()[-1].split()
+    assert line == ['1', 'HD_132599', '14:59:28.00', '+20:22:16.00', '15.75', '-9.00', 'KO', '8.60', 'V']
+    back = io.read_targets(tmp_path / 'g_irtf_nostds.txt')
+    assert back.attrs['mag_col'] == 'vmag' and back['pmra'].iloc[0] == pytest.approx(row['pmra'].iloc[0], abs=0.01)
+    assert back['ra'].iloc[0] == pytest.approx(row['ra'].iloc[0], abs=1e-5)
+    letters = [formats.band_letter(c) for c in ('tmassk', 'jmag', 'phot_g_mean_mag', 'ks', 'w1')]
+    assert letters == ['K', 'J', 'G', '-', '-']
+
+
+def test_irtf_positions_moved_to_j2000(tmp_path):
+    """v3 has no epoch: a Gaia-epoch position with proper motion is written at J2000."""
+    from targetlist_generator import formats
+    row = pd.DataFrame({'shortname': ['A'], 'ra': [10.0], 'dec': [0.0], 'epoch': [2016.0], 'pmra': [1000.0],
+                        'pmdec': [-2000.0], 'spt': [''], 'k': [10.0]})
+    moved = formats.at_j2000(row)
+    assert moved['dec'].iloc[0] == pytest.approx(16 * 2.0 / 3600) and moved['ra'].iloc[0] == pytest.approx(
+        10 - 16 * 1.0 / 3600)
 
 
 def test_night_cut_keeps_only_visible(target_csv, tmp_path):

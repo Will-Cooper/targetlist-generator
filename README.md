@@ -120,7 +120,7 @@ The default, `auto`, writes the chosen observatory's own format (IRTF → `irtf`
 
 | key | file | for |
 | --- | --- | --- |
-| `irtf` | `<name>_irtf.txt`, `<name>_irtf_nostds.txt` | IRTF starcat |
+| `irtf` | `<name>_irtf.txt`, `<name>_irtf_nostds.txt` | IRTF StarCat user list, v3 format (positions at J2000) |
 | `cat` | `cats/<name>_cat_N.cat` | ING object visibility (targets only, ten per file) |
 | `txt` | `<name>_list.txt` | plain text table |
 | `csv` | `<name>_list.csv` | spreadsheet / any software |
@@ -133,7 +133,8 @@ The default, `auto`, writes the chosen observatory's own format (IRTF → `irtf`
 | `magellan` | `<name>_magellan.cat` | Magellan catalogue (rotator set to `0.0 OFF` and no guide stars: edit for your instrument) |
 
 Each writer follows its observatory's published format.
-Proper motions: the Keck, MMT and Magellan writers convert them to those telescopes' units; the Lick and ESO lists leave them out because their documentation does not say whether RA proper motion includes cos(Dec); the IRTF list copies the table's `pmra`/`pmdec` values unchanged, as version 1 did, because the units the IRTF StarCat expects could not be confirmed here, so check them against the StarCat user guide before relying on proper motions there.
+Proper motions: the IRTF, Keck, MMT and Magellan writers convert them to those telescopes' units (IRTF: mas/yr, RA without cos(Dec), per the STARCAT user guide); the Lick and ESO lists leave them out because their documentation does not say whether RA proper motion includes cos(Dec).
+IRTF's v3 user lists have no epoch column, so positions are moved from the table's epoch to J2000 with their proper motions.
 Characters a format does not allow are removed from names (e.g. `* 42 Leo` becomes `42 Leo` for ESO).
 Palomar and Gemini OT lists are not offered yet, as their target-list formats could not be confirmed from public documentation.
 

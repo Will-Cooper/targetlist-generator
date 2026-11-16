@@ -9,7 +9,8 @@ from astropy.table import Table
 
 REQUIRED = ('shortname', 'ra', 'dec')
 TXT_NAMES = ['index', 'shortname', 'ra', 'dec', 'epoch', 'pmra', 'pmdec', 'spt']  # IRTF list columns, mag appended
-IRTF_RULE = '#+-----'
+IRTF_RULE = '#+-----'  # first line of the pre-v3 IRTF lists this tool used to write
+IRTF_V3 = '# IRTF StarCat userlist v3'  # first line of the v3 lists it writes now
 TEXT_SUFFIXES = ('.txt', '.dat', '.tbl', '.ascii', '.text')
 FILE_TYPES = ('CSV, TSV, text tables with a header line (whitespace or IPAC .tbl), FITS (also gzipped), '
               'VOTable (.vot/.xml), ECSV, and this tool\'s own IRTF lists')
@@ -39,7 +40,9 @@ def read_table(path: str | Path) -> pd.DataFrame:
         df = pd.read_csv(path)
     elif suffix == '.tsv':
         df = pd.read_csv(path, sep='\t')
-    elif suffix in TEXT_SUFFIXES and path.read_text(errors='replace').startswith(IRTF_RULE):  # an IRTF list
+    elif suffix in TEXT_SUFFIXES and path.read_text(errors='replace').startswith(IRTF_V3):  # our IRTF v3 list
+        df = read_irtf_v3(path)
+    elif suffix in TEXT_SUFFIXES and path.read_text(errors='replace').startswith(IRTF_RULE):  # an older one
         mag = path.read_text().splitlines()[1].split('|')[-2].strip().lower()
         df = pd.read_csv(path, sep='\t', comment='#', header=None, names=TXT_NAMES + [mag]).drop(columns='index')
     else:
@@ -52,6 +55,17 @@ def read_table(path: str | Path) -> pd.DataFrame:
     if clash:
         raise ValueError(f'{path.name} has columns that differ only in case: {clash}')
     return df
+
+
+def read_irtf_v3(path: Path) -> pd.DataFrame:
+    """One of our IRTF v3 lists back into table columns, pmra converted back to include cos dec."""
+    lines = path.read_text().splitlines()
+    mag = next(line.split(':', 1)[1].strip() for line in lines if line.startswith('# magnitude column:'))
+    df = pd.read_csv(path, sep=r'\s+', comment='#', header=None, usecols=range(9),
+                     names=['index', 'shortname', 'ra', 'dec', 'pmra', 'pmdec', 'spt', mag, 'band'])
+    dec = Angle(df['dec'].astype(str).to_numpy(), unit=u.deg).rad
+    return df.assign(pmra=df['pmra'] * np.cos(dec), epoch=2000.0,
+                     spt=df['spt'].replace('n/a', '')).drop(columns=['index', 'band'])
 
 
 def guess_columns(columns) -> dict[str, str | None]:

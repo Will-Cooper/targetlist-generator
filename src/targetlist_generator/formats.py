@@ -1,9 +1,10 @@
 """Target-list writers for telescopes and tools. Each takes the targets in observing order, the paired standards
 (one row per target, or None) and the magnitude column, and returns the written paths.
 
-Input proper motions are mas/yr with pmra including cos(dec), as in Gaia. Keck, MMT and Magellan convert them to
-their documented units; Lick and ESO omit them (cos dec convention unstated); IRTF copies them unchanged (units not
-confirmed, see ``irtf``). Coordinates are written at the catalogue epoch with equinox J2000."""
+Input proper motions are mas/yr with pmra including cos(dec), as in Gaia. IRTF, Keck, MMT and Magellan convert
+them to their documented units; Lick and ESO omit them (cos dec convention unstated). Coordinates are written at
+the catalogue epoch with equinox J2000, except IRTF v3 lists (moved to J2000, see ``irtf``)."""
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -11,11 +12,10 @@ import numpy as np
 import pandas as pd
 from astropy.table import Table
 
-from .io import formatted, sexagesimal
+from .io import IRTF_V3, formatted, sexagesimal
 from .sky import find_site
 
 CAT_CHUNK = 10  # targets per ING .cat file
-RULE = '#+-----+-----+-----+-----+-----+-----+-----+-----+-------+'
 Writer = Callable[[Path, pd.DataFrame, pd.DataFrame | None, str], list[Path]]
 
 
@@ -50,15 +50,44 @@ def clean_names(names: pd.Series, disallowed: str | None, fmt: str, max_len: int
     return out
 
 
+def band_letter(mag_col: str) -> str:
+    """Single-letter band for a magnitude column name (tmassk -> K, jmag -> J, phot_g_mean_mag -> G), else '-'."""
+    core = re.sub(r'^(tmass|phot_)|(_mean)?_?mag$|_', '', mag_col.lower())
+    return core.upper() if len(core) == 1 and core.isalpha() else '-'
+
+
+def at_j2000(rows: pd.DataFrame) -> pd.DataFrame:
+    """Positions moved from each row's epoch to 2000.0 with its proper motion (mas/yr, pmra with cos dec)."""
+    years = 2000.0 - rows['epoch'].to_numpy(dtype=float)
+    dec = rows['dec'].to_numpy(dtype=float)
+    shift_dec = rows['pmdec'].to_numpy(dtype=float) * years / 3.6e6
+    shift_ra = rows['pmra'].to_numpy(dtype=float) / np.cos(np.radians(dec)) * years / 3.6e6
+    return rows.assign(ra=(rows['ra'] + shift_ra) % 360, dec=dec + shift_dec, epoch=2000.0)
+
+
 def irtf(stem: Path, targets, stds, mag_col) -> list[Path]:
-    """IRTF starcat lists: ``_irtf.txt`` with standards (when given) and ``_irtf_nostds.txt``, in the version 1
-    layout. pmra/pmdec are copied from the table unchanged: the units the StarCat expects (IRTF TCS3 StarCat user
-    guide, 'Userlist v3 text format') could not be confirmed, so check them before relying on proper motions."""
+    """IRTF StarCat 'Userlist v3' (the only user-list format since 2023A; STARCAT User's Guide v2606, section 10,
+    irtf.ifa.hawaii.edu/~tcs3/related/starcat/): whitespace-separated index, name (max 30 characters, no blanks),
+    ICRS RA hh:mm:ss.ss and Dec dd:mm:ss.ss, RA and Dec proper motions in mas/yr (RA without cos dec: the guide
+    converts seconds of time per year by x15000), spectral type (max 7 characters, n/a if unknown) and the magnitude
+    with its band letter ('0.0 -' if unknown); '#' lines are comments. v3 has no epoch column, so positions are
+    moved to J2000 with their proper motions. ``_irtf.txt`` interleaves the standards, ``_irtf_nostds.txt`` has the
+    targets only."""
+    letter = band_letter(mag_col)
+
     def write(path: Path, rows: pd.DataFrame) -> Path:
-        out = formatted(rows, mag_col)
-        out.index = np.arange(1, len(out) + 1)
-        header = f'#|Index| Name|  RA | DEC |Epoch| PMRA|PMDEC|SpT  | {mag_col.upper():>6}|'
-        path.write_text('\n'.join((RULE, header, RULE, '')) + out.to_csv(sep='\t', header=False, lineterminator='\n'))
+        rows = at_j2000(rows)
+        names = clean_names(rows['shortname'], None, 'IRTF', 30)
+        ra, dec = sexagesimal(rows, ra_precision=2, dec_precision=2, sign=True)
+        pmra, pmdec = time_pm(rows)
+        spts = [(s.replace(' ', '')[:7] or 'n/a') for s in rows['spt']]
+        mags = [f'{m:5.2f} {letter}' if np.isfinite(m) else '  0.0 -' for m in rows[mag_col]]
+        lines = [IRTF_V3, f'# magnitude column: {mag_col}',
+                 '#Index Name                           ICRS_RA      ICRS_DEC        RA_PM    Dec_PM  ST      Magn_0',
+                 '#      (max 30, no spaces)            hh:mm:ss.ss  +dd:mm:ss.ss    mas/y    mas/y   (7chr)  mag band']
+        lines += [f'{i:<6} {n:<30} {r}  {d}  {a * 15000:8.2f}  {b * 1000:8.2f}  {s:<7} {m}' for i, (n, r, d, a, b, s, m)
+                  in enumerate(zip(names, ra, dec, pmra, pmdec, spts, mags, strict=True), 1)]
+        path.write_text('\n'.join(lines) + '\n')
         return path
     paths = [write(stem.with_name(f'{stem.name}_irtf_nostds.txt'), targets)]
     if stds is not None:
